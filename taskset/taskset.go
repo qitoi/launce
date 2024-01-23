@@ -87,7 +87,7 @@ func Run(ctx context.Context, t TaskSet, user launce.User) error {
 
 		default:
 			if user != nil {
-				user.ReportExceptions(err)
+				user.ReportException(err)
 			}
 			if err := wait(ctx, user, waiter); err != nil {
 				return err

@@ -17,7 +17,6 @@
 package launce
 
 import (
-	"context"
 	"errors"
 	"os"
 	"sync"
@@ -68,21 +67,16 @@ type Worker struct {
 	MetricsMonitorInterval time.Duration
 	StatsReportInterval    time.Duration
 	MasterHeartbeatTimeout time.Duration
-	SpawnMode              SpawnMode
 
+	runner          *Runner
 	index           int64
 	state           WorkerState
 	transport       Transport
 	spawnCh         chan map[string]int64
 	heartbeatCh     chan struct{}
 	messageHandlers map[string][]MessageHandler
-	userSpawners    map[string]*Spawner
 	procInfo        *ProcessInfo
-	statistics      *Statistics
 	closeCond       *sync.Cond
-
-	parsedOptions      *ParsedOptions
-	parsedOptionsMutex sync.RWMutex
 }
 
 func NewWorker(transport Transport) (*Worker, error) {
@@ -90,19 +84,23 @@ func NewWorker(transport Transport) (*Worker, error) {
 	if err != nil {
 		return nil, err
 	}
+	runner, err := NewRunner()
+	if err != nil {
+		return nil, err
+	}
 	procInfo, err := NewProcessInfo(os.Getpid())
 	if err != nil {
 		return nil, err
 	}
-	return &Worker{
+	worker := &Worker{
 		Version:                "launce-0.0.1",
 		ClientID:               id,
 		HeartbeatInterval:      defaultHeartbeatInterval,
 		MetricsMonitorInterval: defaultMetricsMonitorInterval,
 		StatsReportInterval:    defaultStatsReportInterval,
 		MasterHeartbeatTimeout: defaultMasterHeartbeatTimeout,
-		SpawnMode:              SpawnOnce,
 
+		runner:          runner,
 		index:           -1,
 		state:           WorkerStateInit,
 		transport:       transport,
@@ -110,10 +108,12 @@ func NewWorker(transport Transport) (*Worker, error) {
 		heartbeatCh:     make(chan struct{}),
 		messageHandlers: make(map[string][]MessageHandler),
 		procInfo:        procInfo,
-		userSpawners:    map[string]*Spawner{},
-		statistics:      newStatistics(),
 		closeCond:       sync.NewCond(&sync.Mutex{}),
-	}, nil
+	}
+
+	worker.runner.ExceptionReporter = worker.reportException
+
+	return worker, nil
 }
 
 func (w *Worker) Connect() error {
@@ -148,10 +148,7 @@ func (w *Worker) Close() error {
 	w.closeCond.Broadcast()
 	w.closeCond.L.Unlock()
 
-	for _, spawner := range w.userSpawners {
-		spawner.Stop()
-	}
-	w.stopAllUsers()
+	w.runner.Stop()
 
 	return w.transport.Close()
 }
@@ -172,23 +169,7 @@ func (w *Worker) Start() error {
 }
 
 func (w *Worker) RegisterUser(name string, f UserGenerator) {
-	spawnFunc := func(ctx context.Context) {
-		w.parsedOptionsMutex.RLock()
-		parsedOptions := w.parsedOptions
-		w.parsedOptionsMutex.RUnlock()
-
-		ctx = withParsedOptions(ctx, parsedOptions)
-
-		user := f()
-		user.Init(w, user.WaitTime())
-		if err := ProcessUser(ctx, user); err != nil {
-			if !errors.Is(err, context.Canceled) {
-			}
-		}
-	}
-	spawner := NewSpawner(spawnFunc, w.SpawnMode)
-	spawner.Start()
-	w.userSpawners[name] = spawner
+	w.runner.RegisterUser(name, f)
 }
 
 func (w *Worker) RegisterMessage(typ string, handler MessageHandler) {
@@ -203,10 +184,7 @@ func (w *Worker) State() WorkerState {
 	return atomic.LoadInt64(&w.state)
 }
 
-func (w *Worker) Report(requestType, name string, opts ...StatisticsOption) {
-	w.statistics.Add(time.Now(), requestType, name, opts...)
-}
-func (w *Worker) ReportExceptions(err error) {
+func (w *Worker) reportException(err error) {
 	trace := ""
 	var e Error
 	if errors.As(err, &e) {
@@ -246,23 +224,20 @@ func (w *Worker) process() error {
 			return err
 		}
 
-		w.parsedOptionsMutex.Lock()
-		w.parsedOptions = parsedOptions
-		w.parsedOptionsMutex.Unlock()
+		w.runner.SetParsedOptions(parsedOptions)
 
 		state := atomic.LoadInt64(&w.state)
 		if state != WorkerStateRunning && state != WorkerStateSpawning {
-			w.statistics.Clear()
+			w.runner.FlushStats()
+			w.runner.Start()
 		}
 
 		w.spawnCh <- payload.UserClassesCount
 		break
 
 	case MessageStop:
-		w.parsedOptionsMutex.Lock()
-		w.parsedOptions = nil
-		w.parsedOptionsMutex.Unlock()
-		w.stopAllUsers()
+		w.runner.SetParsedOptions(nil)
+		w.runner.Stop()
 		_ = w.send(MessageClientStopped, nil)
 		atomic.StoreInt64(&w.state, WorkerStateInit)
 		_ = w.send(MessageClientReady, w.Version)
@@ -296,7 +271,7 @@ func (w *Worker) process() error {
 	return nil
 }
 
-func (w *Worker) spawn(close chan struct{}) {
+func (w *Worker) spawn(closeCh chan struct{}) {
 loop:
 	for {
 		select {
@@ -310,8 +285,7 @@ loop:
 			}
 
 			for name, count := range spawnCount {
-				if spawner, ok := w.userSpawners[name]; ok {
-					spawner.Cap(int(count))
+				if err := w.runner.Spawn(name, int(count)); err != nil {
 					payload.UserCount += count
 					payload.UserClassesCount[name] = count
 				}
@@ -323,20 +297,13 @@ loop:
 
 			break
 
-		case <-close:
+		case <-closeCh:
 			break loop
 		}
 	}
 }
 
-func (w *Worker) stopAllUsers() {
-	for _, spawner := range w.userSpawners {
-		spawner.Cap(0)
-		spawner.StopAllUsers()
-	}
-}
-
-func (w *Worker) heartbeatProcess(interval time.Duration, close chan struct{}) {
+func (w *Worker) heartbeatProcess(interval time.Duration, closeCh chan struct{}) {
 	if interval <= 0 {
 		return
 	}
@@ -357,13 +324,13 @@ loop:
 			_ = w.send(MessageHeartbeat, msg)
 			break
 
-		case <-close:
+		case <-closeCh:
 			break loop
 		}
 	}
 }
 
-func (w *Worker) heartbeatCheckProcess(timeout time.Duration, close chan struct{}) {
+func (w *Worker) heartbeatCheckProcess(timeout time.Duration, closeCh chan struct{}) {
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 
@@ -381,13 +348,13 @@ loop:
 			_ = w.Quit()
 			break loop
 
-		case <-close:
+		case <-closeCh:
 			break loop
 		}
 	}
 }
 
-func (w *Worker) statsProcess(interval time.Duration, close chan struct{}) {
+func (w *Worker) statsProcess(interval time.Duration, closeCh chan struct{}) {
 	if interval <= 0 {
 		return
 	}
@@ -402,24 +369,22 @@ loop:
 			_ = w.sendStats()
 			break
 
-		case <-close:
+		case <-closeCh:
 			break loop
 		}
 	}
 }
 
 func (w *Worker) sendStats() error {
-	payload := convertStatisticsPayload(w.statistics.Move())
-	payload.UserClassesCount = map[string]int64{}
-	for name, spawner := range w.userSpawners {
-		count := spawner.Count()
+	payload := convertStatisticsPayload(w.runner.FlushStats())
+	payload.UserClassesCount = w.runner.Users()
+	for _, count := range payload.UserClassesCount {
 		payload.UserCount += count
-		payload.UserClassesCount[name] = count
 	}
 	return w.send(MessageStats, payload)
 }
 
-func (w *Worker) metricsMonitorProcess(interval time.Duration, close chan struct{}) {
+func (w *Worker) metricsMonitorProcess(interval time.Duration, closeCh chan struct{}) {
 	if interval <= 0 {
 		return
 	}
@@ -436,7 +401,7 @@ loop:
 			_ = w.procInfo.Update()
 			break
 
-		case <-close:
+		case <-closeCh:
 			break loop
 		}
 	}

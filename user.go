@@ -48,14 +48,14 @@ type UserGenerator func() User
 
 type Reporter interface {
 	Report(requestType, name string, opts ...StatisticsOption)
-	ReportExceptions(err error)
+	ReportException(err error)
 }
 
 type User interface {
 	Init(r Reporter, waitTime WaitTimeFunc)
 
 	Report(requestType, name string, opts ...StatisticsOption)
-	ReportExceptions(err error)
+	ReportException(err error)
 
 	Wait(ctx context.Context) error
 	WaitTime() WaitTimeFunc
