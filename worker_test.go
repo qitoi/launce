@@ -64,17 +64,31 @@ func setupWorker(t *testing.T) (*launce.Worker, *mock.Transport) {
 	return worker, masterTransport
 }
 
-func startMasterReceiver(wg *sync.WaitGroup, master launce.Transport, filterMessages ...string) <-chan launce.ParsedMessage {
+func startMasterReceiver(wg *sync.WaitGroup, master launce.Transport, filterMessages ...string) (<-chan launce.ParsedMessage, func()) {
 	ch := make(chan launce.ParsedMessage)
+
+	readyCh := make(chan struct{})
+	var once sync.Once
 
 	wg.Add(1)
 	go func() {
 		defer close(ch)
 		defer wg.Done()
+
 		for {
 			msg, err := master.Receive()
 			if err != nil {
 				return
+			}
+			if msg.Type == "client_ready" {
+				_ = master.Send(launce.Message{
+					Type:   launce.MessageAck,
+					Data:   launce.AckPayload{Index: 1},
+					NodeID: msg.NodeID,
+				})
+				once.Do(func() {
+					close(readyCh)
+				})
 			}
 			if slices.Contains(filterMessages, msg.Type) {
 				ch <- msg
@@ -82,55 +96,46 @@ func startMasterReceiver(wg *sync.WaitGroup, master launce.Transport, filterMess
 		}
 	}()
 
-	return ch
+	return ch, func() {
+		<-readyCh
+	}
 }
 
-func TestWorker_Start(t *testing.T) {
+func TestWorker_Join(t *testing.T) {
 	var wg sync.WaitGroup
 
 	worker, master := setupWorker(t)
-	_ = startMasterReceiver(&wg, master)
+	_, waitForReady := startMasterReceiver(&wg, master)
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		time.Sleep(100 * time.Millisecond)
-		worker.Close()
+		waitForReady()
+		worker.Quit()
 	}()
 
-	err := worker.Connect()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = worker.Start()
-	if !errors.Is(err, launce.ErrConnectionClosed) {
+	if err := worker.Join(); err != nil {
 		t.Fatal(err)
 	}
 
 	wg.Wait()
 }
 
-func TestWorker_Close(t *testing.T) {
+func TestWorker_Quit(t *testing.T) {
 	var wg sync.WaitGroup
 
 	worker, master := setupWorker(t)
-	_ = startMasterReceiver(&wg, master)
-
-	_ = worker.Connect()
+	_, waitForReady := startMasterReceiver(&wg, master)
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_ = worker.Start()
+		_ = worker.Join()
 	}()
 
-	time.Sleep(100 * time.Millisecond)
+	waitForReady()
 
-	err := worker.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	worker.Quit()
 
 	wg.Wait()
 }
@@ -139,20 +144,20 @@ func TestWorker_RegisterMessage(t *testing.T) {
 	var wg sync.WaitGroup
 
 	worker, master := setupWorker(t)
-	_ = startMasterReceiver(&wg, master)
+	_, waitForReady := startMasterReceiver(&wg, master)
 
 	ch := make(chan launce.ParsedMessage)
 	worker.RegisterMessage("custom-message", func(msg launce.ParsedMessage) {
 		ch <- msg
 	})
 
-	_ = worker.Connect()
-
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_ = worker.Start()
+		_ = worker.Join()
 	}()
+
+	waitForReady()
 
 	_ = master.Send(launce.Message{
 		Type:   "custom-message",
@@ -173,7 +178,7 @@ func TestWorker_RegisterMessage(t *testing.T) {
 		t.Fatalf("received custome message mismatch. got:%v want:%v", msg, "hello")
 	}
 
-	_ = worker.Close()
+	worker.Quit()
 
 	wg.Wait()
 }
@@ -182,7 +187,7 @@ func TestWorker_RegisterMessage_MultipleReceivers(t *testing.T) {
 	var wg sync.WaitGroup
 
 	worker, master := setupWorker(t)
-	_ = startMasterReceiver(&wg, master)
+	_, waitForReady := startMasterReceiver(&wg, master)
 
 	ch := make(chan string)
 	worker.RegisterMessage("custom-message", func(msg launce.ParsedMessage) {
@@ -192,13 +197,13 @@ func TestWorker_RegisterMessage_MultipleReceivers(t *testing.T) {
 		ch <- "2:" + extractMessageData[string](msg)
 	})
 
-	_ = worker.Connect()
-
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_ = worker.Start()
+		_ = worker.Join()
 	}()
+
+	waitForReady()
 
 	_ = master.Send(launce.Message{
 		Type:   "custom-message",
@@ -215,7 +220,7 @@ func TestWorker_RegisterMessage_MultipleReceivers(t *testing.T) {
 		t.Fatalf("received custome message mismatch. got:%v want:%v", msg2, "2:hello")
 	}
 
-	_ = worker.Close()
+	worker.Quit()
 
 	wg.Wait()
 }
@@ -224,7 +229,7 @@ func TestWorker_RegisterMessage_MultipleMessages(t *testing.T) {
 	var wg sync.WaitGroup
 
 	worker, master := setupWorker(t)
-	_ = startMasterReceiver(&wg, master)
+	_, waitForReady := startMasterReceiver(&wg, master)
 
 	ch := make(chan string, 1)
 	worker.RegisterMessage("custom-message1", func(msg launce.ParsedMessage) {
@@ -234,13 +239,13 @@ func TestWorker_RegisterMessage_MultipleMessages(t *testing.T) {
 		ch <- "2:" + extractMessageData[string](msg)
 	})
 
-	_ = worker.Connect()
-
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_ = worker.Start()
+		_ = worker.Join()
 	}()
+
+	waitForReady()
 
 	_ = master.Send(launce.Message{
 		Type:   "custom-message1",
@@ -262,7 +267,7 @@ func TestWorker_RegisterMessage_MultipleMessages(t *testing.T) {
 		t.Fatalf("received custome message mismatch. got:%v want:%v", msg2, "2:bar")
 	}
 
-	_ = worker.Close()
+	worker.Quit()
 
 	wg.Wait()
 }
@@ -271,7 +276,7 @@ func TestWorker_RegisterUser(t *testing.T) {
 	var wg sync.WaitGroup
 
 	worker, master := setupWorker(t)
-	_ = startMasterReceiver(&wg, master)
+	_, waitForReady := startMasterReceiver(&wg, master)
 
 	userFunc, stats, uc := mock.UserGenerator(func(ctx context.Context, u *mock.User) error {
 		return Wait(ctx)
@@ -279,13 +284,13 @@ func TestWorker_RegisterUser(t *testing.T) {
 
 	worker.RegisterUser("test-user", userFunc)
 
-	_ = worker.Connect()
-
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_ = worker.Start()
+		_ = worker.Join()
 	}()
+
+	waitForReady()
 
 	_ = master.Send(launce.Message{
 		Type: launce.MessageSpawn,
@@ -350,7 +355,7 @@ func TestWorker_RegisterUser(t *testing.T) {
 		t.Fatalf("unexpected stopped user. got:%v want:%v", n, 4)
 	}
 
-	_ = worker.Close()
+	worker.Quit()
 	uc.WaitStop(5)
 
 	if n := stats.GetStarted(); n != 5 {
@@ -367,7 +372,7 @@ func TestWorker_SpawnMessage(t *testing.T) {
 	var wg sync.WaitGroup
 
 	worker, master := setupWorker(t)
-	masterCh := startMasterReceiver(&wg, master, launce.MessageClientReady, launce.MessageSpawning, launce.MessageSpawningComplete, launce.MessageClientStopped)
+	masterCh, _ := startMasterReceiver(&wg, master, launce.MessageClientReady, launce.MessageSpawning, launce.MessageSpawningComplete, launce.MessageClientStopped)
 
 	userFunc, _, uc := mock.UserGenerator(func(ctx context.Context, u *mock.User) error {
 		return Wait(ctx)
@@ -375,18 +380,16 @@ func TestWorker_SpawnMessage(t *testing.T) {
 
 	worker.RegisterUser("test-user", userFunc)
 
-	_ = worker.Connect()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_ = worker.Join()
+	}()
 
 	msg := <-masterCh
 	if msg.Type != launce.MessageClientReady {
 		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageClientReady)
 	}
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		_ = worker.Start()
-	}()
 
 	_ = master.Send(launce.Message{
 		Type: launce.MessageSpawn,
@@ -432,7 +435,7 @@ func TestWorker_SpawnMessage(t *testing.T) {
 		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageClientReady)
 	}
 
-	_ = worker.Close()
+	worker.Quit()
 
 	wg.Wait()
 }
@@ -441,7 +444,7 @@ func TestWorker_QuitMessage(t *testing.T) {
 	var wg sync.WaitGroup
 
 	worker, master := setupWorker(t)
-	masterCh := startMasterReceiver(&wg, master, launce.MessageClientReady)
+	masterCh, waitForReady := startMasterReceiver(&wg, master, launce.MessageClientReady)
 
 	userFunc, _, _ := mock.UserGenerator(func(ctx context.Context, u *mock.User) error {
 		return Wait(ctx)
@@ -449,13 +452,13 @@ func TestWorker_QuitMessage(t *testing.T) {
 
 	worker.RegisterUser("test-user", userFunc)
 
-	_ = worker.Connect()
-
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_ = worker.Start()
+		_ = worker.Join()
 	}()
+
+	waitForReady()
 
 	msg := <-masterCh
 	if msg.Type != launce.MessageClientReady {
@@ -477,7 +480,7 @@ func TestWorker_ExceptionMessage(t *testing.T) {
 	var wg sync.WaitGroup
 
 	worker, master := setupWorker(t)
-	masterCh := startMasterReceiver(&wg, master, launce.MessageException)
+	masterCh, waitForReady := startMasterReceiver(&wg, master, launce.MessageException)
 
 	errTest := errors.New("test error")
 
@@ -493,13 +496,13 @@ func TestWorker_ExceptionMessage(t *testing.T) {
 
 	worker.RegisterUser("test-user", userFunc)
 
-	_ = worker.Connect()
-
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_ = worker.Start()
+		_ = worker.Join()
 	}()
+
+	waitForReady()
 
 	_ = master.Send(launce.Message{
 		Type: launce.MessageSpawn,
@@ -519,7 +522,7 @@ func TestWorker_ExceptionMessage(t *testing.T) {
 
 	msg := <-masterCh
 
-	_ = worker.Close()
+	worker.Quit()
 
 	data := extractMessageData[launce.ExceptionPayload](msg)
 	if data.Msg != errTest.Error() {

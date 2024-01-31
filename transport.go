@@ -19,15 +19,10 @@ package launce
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/go-zeromq/zmq4"
 	"github.com/vmihailenco/msgpack/v5"
-)
-
-var (
-	ErrConnectionClosed = errors.New("connection closed")
 )
 
 type Transport interface {

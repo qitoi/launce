@@ -18,6 +18,7 @@ package mock
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/qitoi/launce"
@@ -25,6 +26,10 @@ import (
 
 var (
 	_ launce.Transport = (*Transport)(nil)
+)
+
+var (
+	ErrConnectionClosed = errors.New("connection closed")
 )
 
 type Transport struct {
@@ -83,7 +88,7 @@ func (m *Transport) Send(msg launce.Message) error {
 	case ch <- b:
 		break
 	case <-m.ctx.Done():
-		return launce.ErrConnectionClosed
+		return ErrConnectionClosed
 	}
 
 	return nil
@@ -98,11 +103,11 @@ func (m *Transport) Receive() (launce.ParsedMessage, error) {
 	case b, ok := <-ch:
 		if !ok {
 			_ = m.Close()
-			return launce.ParsedMessage{}, launce.ErrConnectionClosed
+			return launce.ParsedMessage{}, ErrConnectionClosed
 		}
 		return launce.ParseMessage(b)
 	case <-m.ctx.Done():
-		return launce.ParsedMessage{}, launce.ErrConnectionClosed
+		return launce.ParsedMessage{}, ErrConnectionClosed
 	}
 }
 

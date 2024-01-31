@@ -33,6 +33,12 @@ const (
 	WorkerStateInit WorkerState = iota
 	WorkerStateSpawning
 	WorkerStateRunning
+	WorkerStateCleanup
+	WorkerStateStopped
+)
+
+var (
+	ErrConnection = errors.New("failed to connect to master")
 )
 
 const (
@@ -40,6 +46,9 @@ const (
 	defaultMetricsMonitorInterval = 5 * time.Second
 	defaultStatsReportInterval    = 3 * time.Second
 	defaultMasterHeartbeatTimeout = 60 * time.Second
+
+	connectTimeout    = 5 * time.Second
+	connectRetryCount = 60
 )
 
 var (
@@ -47,6 +56,8 @@ var (
 		WorkerStateInit:     "ready",
 		WorkerStateSpawning: "spawning",
 		WorkerStateRunning:  "running",
+		WorkerStateCleanup:  "cleanup",
+		WorkerStateStopped:  "stopped",
 	}
 )
 
@@ -73,6 +84,7 @@ type Worker struct {
 	state           WorkerState
 	transport       Transport
 	spawnCh         chan map[string]int64
+	ackCh           chan struct{}
 	heartbeatCh     chan struct{}
 	messageHandlers map[string][]MessageHandler
 	procInfo        *ProcessInfo
@@ -105,6 +117,7 @@ func NewWorker(transport Transport) (*Worker, error) {
 		state:           WorkerStateInit,
 		transport:       transport,
 		spawnCh:         make(chan map[string]int64),
+		ackCh:           make(chan struct{}, 1),
 		heartbeatCh:     make(chan struct{}),
 		messageHandlers: make(map[string][]MessageHandler),
 		procInfo:        procInfo,
@@ -116,13 +129,14 @@ func NewWorker(transport Transport) (*Worker, error) {
 	return worker, nil
 }
 
-func (w *Worker) Connect() error {
-	if err := w.transport.Open(w.ClientID); err != nil {
+func (w *Worker) Join() error {
+	var wg sync.WaitGroup
+
+	if err := w.open(); err != nil {
 		return err
 	}
 
 	closeCh := make(chan struct{})
-
 	go func() {
 		w.closeCond.L.Lock()
 		w.closeCond.Wait()
@@ -130,42 +144,177 @@ func (w *Worker) Connect() error {
 		close(closeCh)
 	}()
 
-	if err := w.send(MessageClientReady, w.Version); err != nil {
+	w.startMessageProcess(&wg)
+
+	if err := w.connect(); err != nil {
+		_ = w.close()
 		return err
 	}
 
-	go w.heartbeatCheckProcess(w.MasterHeartbeatTimeout, closeCh)
-	go w.heartbeatProcess(w.HeartbeatInterval, closeCh)
-	go w.metricsMonitorProcess(w.MetricsMonitorInterval, closeCh)
-	go w.statsProcess(w.StatsReportInterval, closeCh)
-	go w.spawn(closeCh)
+	var procWg sync.WaitGroup
+
+	w.startHeartbeatProcess(&procWg, w.HeartbeatInterval, closeCh)
+	w.startHeartbeatCheckProcess(&procWg, w.MasterHeartbeatTimeout, closeCh)
+	w.startMetricsMonitorProcess(&procWg, w.MetricsMonitorInterval, closeCh)
+	w.startStatsProcess(&procWg, w.StatsReportInterval, closeCh)
+	w.startSpawnProcess(&procWg, closeCh)
+
+	procWg.Wait()
+
+	_ = w.send(MessageQuit, nil)
+
+	if err := w.close(); err != nil {
+		return err
+	}
+
+	wg.Wait()
 
 	return nil
 }
 
-func (w *Worker) Close() error {
+func (w *Worker) Stop() {
+	if atomic.LoadInt64(&w.state) == WorkerStateStopped {
+		return
+	}
+	atomic.StoreInt64(&w.state, WorkerStateCleanup)
+	w.runner.Stop()
+	atomic.StoreInt64(&w.state, WorkerStateStopped)
+}
+
+func (w *Worker) Quit() {
+	w.Stop()
 	w.closeCond.L.Lock()
 	w.closeCond.Broadcast()
 	w.closeCond.L.Unlock()
+}
 
-	w.runner.Stop()
+func (w *Worker) open() error {
+	return w.transport.Open(w.ClientID)
+}
 
+func (w *Worker) close() error {
 	return w.transport.Close()
 }
 
-func (w *Worker) Quit() error {
-	if err := w.send(MessageQuit, nil); err != nil {
-		return err
-	}
-	return w.Close()
-}
+func (w *Worker) connect() error {
+	retry := 0
+	ticker := time.NewTicker(connectTimeout)
+	defer ticker.Stop()
 
-func (w *Worker) Start() error {
+flushLoop:
 	for {
-		if err := w.process(); err != nil {
-			return err
+		select {
+		case <-w.ackCh:
+		default:
+			break flushLoop
 		}
 	}
+
+	if err := w.send(MessageClientReady, w.Version); err != nil {
+		return err
+	}
+
+loop:
+	for {
+		select {
+		case <-ticker.C:
+			retry += 1
+			if retry > connectRetryCount {
+				return ErrConnection
+			}
+			break
+
+		case <-w.ackCh:
+			break loop
+		}
+	}
+
+	return nil
+}
+
+func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		for {
+			msg, err := w.transport.Receive()
+			if err != nil {
+				return
+			}
+
+			switch msg.Type {
+			case MessageAck:
+				var payload AckPayload
+				if err := msgpack.Unmarshal(msg.Data, &payload); err != nil {
+					return
+				}
+				atomic.StoreInt64(&w.index, payload.Index)
+
+				select {
+				case w.ackCh <- struct{}{}:
+				default:
+				}
+
+				break
+
+			case MessageSpawn:
+				var payload SpawnPayload
+				if err := msgpack.Unmarshal(msg.Data, &payload); err != nil {
+					return
+				}
+
+				parsedOptions, err := NewParsedOptions(payload.ParsedOptions)
+				if err != nil {
+					return
+				}
+
+				w.runner.SetParsedOptions(parsedOptions)
+
+				state := atomic.LoadInt64(&w.state)
+				if state != WorkerStateRunning && state != WorkerStateSpawning {
+					w.runner.FlushStats()
+					w.runner.Start()
+				}
+
+				w.spawnCh <- payload.UserClassesCount
+				break
+
+			case MessageStop:
+				w.runner.SetParsedOptions(nil)
+				w.runner.Stop()
+				_ = w.send(MessageClientStopped, nil)
+				atomic.StoreInt64(&w.state, WorkerStateInit)
+				_ = w.send(MessageClientReady, w.Version)
+				break
+
+			case MessageReconnect:
+				_ = w.close()
+				_ = w.open()
+				break
+
+			case MessageHeartbeat:
+				select {
+				case w.heartbeatCh <- struct{}{}:
+				default:
+				}
+
+			case MessageQuit:
+				w.Stop()
+				_ = w.sendStats()
+				w.Quit()
+				break
+
+			default:
+				if handlers, ok := w.messageHandlers[msg.Type]; ok {
+					for _, handler := range handlers {
+						handler(msg)
+					}
+				}
+				break
+			}
+		}
+	}()
 }
 
 func (w *Worker) RegisterUser(name string, f UserGenerator) {
@@ -198,181 +347,134 @@ func (w *Worker) reportException(err error) {
 	})
 }
 
-func (w *Worker) process() error {
-	msg, err := w.transport.Receive()
-	if err != nil {
-		return err
-	}
+func (w *Worker) startSpawnProcess(wg *sync.WaitGroup, closeCh chan struct{}) {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 
-	switch msg.Type {
-	case MessageAck:
-		var payload AckPayload
-		if err := msgpack.Unmarshal(msg.Data, &payload); err != nil {
-			return err
-		}
-		atomic.StoreInt64(&w.index, payload.Index)
-		break
+	loop:
+		for {
+			select {
+			case spawnCount := <-w.spawnCh:
+				atomic.StoreInt64(&w.state, WorkerStateSpawning)
+				_ = w.send(MessageSpawning, nil)
 
-	case MessageSpawn:
-		var payload SpawnPayload
-		if err := msgpack.Unmarshal(msg.Data, &payload); err != nil {
-			return err
-		}
-
-		parsedOptions, err := NewParsedOptions(payload.ParsedOptions)
-		if err != nil {
-			return err
-		}
-
-		w.runner.SetParsedOptions(parsedOptions)
-
-		state := atomic.LoadInt64(&w.state)
-		if state != WorkerStateRunning && state != WorkerStateSpawning {
-			w.runner.FlushStats()
-			w.runner.Start()
-		}
-
-		w.spawnCh <- payload.UserClassesCount
-		break
-
-	case MessageStop:
-		w.runner.SetParsedOptions(nil)
-		w.runner.Stop()
-		_ = w.send(MessageClientStopped, nil)
-		atomic.StoreInt64(&w.state, WorkerStateInit)
-		_ = w.send(MessageClientReady, w.Version)
-		break
-
-	case MessageReconnect:
-		_ = w.Close()
-		_ = w.Connect()
-		break
-
-	case MessageHeartbeat:
-		select {
-		case w.heartbeatCh <- struct{}{}:
-		default:
-		}
-
-	case MessageQuit:
-		_ = w.Close()
-		_ = w.sendStats()
-		break
-
-	default:
-		if handlers, ok := w.messageHandlers[msg.Type]; ok {
-			for _, handler := range handlers {
-				handler(msg)
-			}
-		}
-		break
-	}
-
-	return nil
-}
-
-func (w *Worker) spawn(closeCh chan struct{}) {
-loop:
-	for {
-		select {
-		case spawnCount := <-w.spawnCh:
-			atomic.StoreInt64(&w.state, WorkerStateSpawning)
-			_ = w.send(MessageSpawning, nil)
-
-			payload := &SpawningCompletePayload{
-				UserClassesCount: map[string]int64{},
-				UserCount:        0,
-			}
-
-			for name, count := range spawnCount {
-				if err := w.runner.Spawn(name, int(count)); err != nil {
-					payload.UserCount += count
-					payload.UserClassesCount[name] = count
+				users := w.runner.Users()
+				var total int64
+				for _, u := range users {
+					total += u
 				}
+
+				payload := &SpawningCompletePayload{
+					UserClassesCount: users,
+					UserCount:        total,
+				}
+
+				for name, count := range spawnCount {
+					if err := w.runner.Spawn(name, int(count)); err != nil {
+						payload.UserCount += count
+						payload.UserClassesCount[name] = count
+					}
+				}
+
+				_ = w.send(MessageSpawningComplete, payload)
+
+				atomic.StoreInt64(&w.state, WorkerStateRunning)
+
+				break
+
+			case <-closeCh:
+				break loop
 			}
-
-			_ = w.send(MessageSpawningComplete, payload)
-
-			atomic.StoreInt64(&w.state, WorkerStateRunning)
-
-			break
-
-		case <-closeCh:
-			break loop
 		}
-	}
+	}()
 }
 
-func (w *Worker) heartbeatProcess(interval time.Duration, closeCh chan struct{}) {
+func (w *Worker) startHeartbeatProcess(wg *sync.WaitGroup, interval time.Duration, closeCh chan struct{}) {
 	if interval <= 0 {
 		return
 	}
 
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 
-loop:
-	for {
-		select {
-		case <-ticker.C:
-			state := atomic.LoadInt64(&w.state)
-			msg := HeartbeatPayload{
-				State:              workerStateNames[state],
-				CurrentCPUUsage:    w.procInfo.CPUUsage(),
-				CurrentMemoryUsage: w.procInfo.MemoryUsage(),
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+	loop:
+		for {
+			select {
+			case <-ticker.C:
+				state := atomic.LoadInt64(&w.state)
+				msg := HeartbeatPayload{
+					State:              workerStateNames[state],
+					CurrentCPUUsage:    w.procInfo.CPUUsage(),
+					CurrentMemoryUsage: w.procInfo.MemoryUsage(),
+				}
+				_ = w.send(MessageHeartbeat, msg)
+				break
+
+			case <-closeCh:
+				break loop
 			}
-			_ = w.send(MessageHeartbeat, msg)
-			break
-
-		case <-closeCh:
-			break loop
 		}
-	}
+	}()
 }
 
-func (w *Worker) heartbeatCheckProcess(timeout time.Duration, closeCh chan struct{}) {
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
+func (w *Worker) startHeartbeatCheckProcess(wg *sync.WaitGroup, timeout time.Duration, closeCh chan struct{}) {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 
-loop:
-	for {
-		select {
-		case <-w.heartbeatCh:
-			if !timer.Stop() {
-				<-timer.C
+		timer := time.NewTimer(timeout)
+		defer timer.Stop()
+
+	loop:
+		for {
+			select {
+			case <-w.heartbeatCh:
+				if !timer.Stop() {
+					<-timer.C
+				}
+				timer.Reset(timeout)
+				break
+
+			case <-timer.C:
+				w.Quit()
+				break loop
+
+			case <-closeCh:
+				break loop
 			}
-			timer.Reset(timeout)
-			break
-
-		case <-timer.C:
-			_ = w.Quit()
-			break loop
-
-		case <-closeCh:
-			break loop
 		}
-	}
+	}()
 }
 
-func (w *Worker) statsProcess(interval time.Duration, closeCh chan struct{}) {
+func (w *Worker) startStatsProcess(wg *sync.WaitGroup, interval time.Duration, closeCh chan struct{}) {
 	if interval <= 0 {
 		return
 	}
 
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 
-loop:
-	for {
-		select {
-		case <-ticker.C:
-			_ = w.sendStats()
-			break
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
 
-		case <-closeCh:
-			break loop
+	loop:
+		for {
+			select {
+			case <-ticker.C:
+				_ = w.sendStats()
+				break
+
+			case <-closeCh:
+				break loop
+			}
 		}
-	}
+	}()
 }
 
 func (w *Worker) sendStats() error {
@@ -384,27 +486,32 @@ func (w *Worker) sendStats() error {
 	return w.send(MessageStats, payload)
 }
 
-func (w *Worker) metricsMonitorProcess(interval time.Duration, closeCh chan struct{}) {
+func (w *Worker) startMetricsMonitorProcess(wg *sync.WaitGroup, interval time.Duration, closeCh chan struct{}) {
 	if interval <= 0 {
 		return
 	}
 
 	_ = w.procInfo.Update()
 
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 
-loop:
-	for {
-		select {
-		case <-ticker.C:
-			_ = w.procInfo.Update()
-			break
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
 
-		case <-closeCh:
-			break loop
+	loop:
+		for {
+			select {
+			case <-ticker.C:
+				_ = w.procInfo.Update()
+				break
+
+			case <-closeCh:
+				break loop
+			}
 		}
-	}
+	}()
 }
 
 func (w *Worker) send(typ string, data any) error {
