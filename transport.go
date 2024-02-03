@@ -17,19 +17,17 @@
 package launce
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 
 	"github.com/go-zeromq/zmq4"
-	"github.com/vmihailenco/msgpack/v5"
 )
 
 type Transport interface {
 	Open(ctx context.Context, clientID string) error
 	Close() error
-	Send(msg Message) error
-	Receive() (ParsedMessage, error)
+	Send(msg []byte) error
+	Receive() ([]byte, error)
 }
 
 var (
@@ -68,63 +66,14 @@ func (t *ZmqTransport) Close() error {
 	return t.socket.Close()
 }
 
-func (t *ZmqTransport) Send(msg Message) error {
-	b, err := msg.Encode()
-	if err != nil {
-		return err
-	}
-	return t.socket.Send(zmq4.NewMsg(b))
+func (t *ZmqTransport) Send(msg []byte) error {
+	return t.socket.Send(zmq4.NewMsg(msg))
 }
 
-func (t *ZmqTransport) Receive() (ParsedMessage, error) {
+func (t *ZmqTransport) Receive() ([]byte, error) {
 	msg, err := t.socket.Recv()
 	if err != nil {
-		return ParsedMessage{}, err
-	}
-
-	parsed, err := ParseMessage(msg.Bytes())
-	if err != nil {
-		return ParsedMessage{}, err
-	}
-
-	return parsed, nil
-}
-
-type Message struct {
-	Type   string `msgpack:"type"`
-	Data   any    `msgpack:"data"`
-	NodeID string `msgpack:"node_id"`
-}
-
-func (m *Message) Encode() ([]byte, error) {
-	b := bytes.NewBuffer(nil)
-	enc := msgpack.NewEncoder(b)
-	if err := enc.EncodeArrayLen(3); err != nil {
 		return nil, err
 	}
-	if err := enc.EncodeString(m.Type); err != nil {
-		return nil, err
-	}
-	if err := enc.Encode(m.Data); err != nil {
-		return nil, err
-	}
-	if err := enc.EncodeString(m.NodeID); err != nil {
-		return nil, err
-	}
-	return b.Bytes(), nil
-}
-
-type ParsedMessage struct {
-	Type   string             `msgpack:"type"`
-	Data   msgpack.RawMessage `msgpack:"data"`
-	NodeID string             `msgpack:"node_id"`
-}
-
-func ParseMessage(data []byte) (ParsedMessage, error) {
-	var msg ParsedMessage
-	dec := msgpack.NewDecoder(bytes.NewReader(data))
-	if err := dec.Decode(&msg); err != nil {
-		return ParsedMessage{}, err
-	}
-	return msg, nil
+	return msg.Bytes(), nil
 }

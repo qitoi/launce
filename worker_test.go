@@ -35,7 +35,7 @@ var (
 	parsedOptions, _ = msgpack.Marshal(launce.ParsedOptions{})
 )
 
-func extractMessageData[T any](msg launce.ParsedMessage) T {
+func extractMessageData[T any](msg launce.ReceivedMessage) T {
 	var v T
 	if err := msgpack.Unmarshal(msg.Data, &v); err != nil {
 		var z T
@@ -64,8 +64,8 @@ func setupWorker(t *testing.T) (*launce.Worker, *mock.Transport) {
 	return worker, masterTransport
 }
 
-func startMasterReceiver(wg *sync.WaitGroup, master launce.Transport, filterMessages ...string) (<-chan launce.ParsedMessage, func()) {
-	ch := make(chan launce.ParsedMessage)
+func startMasterReceiver(wg *sync.WaitGroup, master launce.Transport, filterMessages ...string) (<-chan launce.ReceivedMessage, func()) {
+	ch := make(chan launce.ReceivedMessage)
 
 	readyCh := make(chan struct{})
 	var once sync.Once
@@ -146,8 +146,8 @@ func TestWorker_RegisterMessage(t *testing.T) {
 	worker, master := setupWorker(t)
 	_, waitForReady := startMasterReceiver(&wg, master)
 
-	ch := make(chan launce.ParsedMessage)
-	worker.RegisterMessage("custom-message", func(msg launce.ParsedMessage) {
+	ch := make(chan launce.ReceivedMessage)
+	worker.RegisterMessage("custom-message", func(msg launce.ReceivedMessage) {
 		ch <- msg
 	})
 
@@ -190,10 +190,10 @@ func TestWorker_RegisterMessage_MultipleReceivers(t *testing.T) {
 	_, waitForReady := startMasterReceiver(&wg, master)
 
 	ch := make(chan string)
-	worker.RegisterMessage("custom-message", func(msg launce.ParsedMessage) {
+	worker.RegisterMessage("custom-message", func(msg launce.ReceivedMessage) {
 		ch <- "1:" + extractMessageData[string](msg)
 	})
-	worker.RegisterMessage("custom-message", func(msg launce.ParsedMessage) {
+	worker.RegisterMessage("custom-message", func(msg launce.ReceivedMessage) {
 		ch <- "2:" + extractMessageData[string](msg)
 	})
 
@@ -232,10 +232,10 @@ func TestWorker_RegisterMessage_MultipleMessages(t *testing.T) {
 	_, waitForReady := startMasterReceiver(&wg, master)
 
 	ch := make(chan string, 1)
-	worker.RegisterMessage("custom-message1", func(msg launce.ParsedMessage) {
+	worker.RegisterMessage("custom-message1", func(msg launce.ReceivedMessage) {
 		ch <- "1:" + extractMessageData[string](msg)
 	})
-	worker.RegisterMessage("custom-message2", func(msg launce.ParsedMessage) {
+	worker.RegisterMessage("custom-message2", func(msg launce.ReceivedMessage) {
 		ch <- "2:" + extractMessageData[string](msg)
 	})
 

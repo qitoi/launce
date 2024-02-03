@@ -17,6 +17,8 @@
 package launce
 
 import (
+	"bytes"
+
 	"github.com/vmihailenco/msgpack/v5"
 )
 
@@ -42,6 +44,49 @@ const (
 	MessageStats            = "stats"
 	MessageException        = "exception"
 )
+
+type Message struct {
+	Type   string `msgpack:"type"`
+	Data   any    `msgpack:"data"`
+	NodeID string `msgpack:"node_id"`
+}
+
+func encodeMessage(m Message) ([]byte, error) {
+	b := bytes.NewBuffer(nil)
+	enc := msgpack.NewEncoder(b)
+	if err := enc.EncodeArrayLen(3); err != nil {
+		return nil, err
+	}
+	if err := enc.EncodeString(m.Type); err != nil {
+		return nil, err
+	}
+	if err := enc.Encode(m.Data); err != nil {
+		return nil, err
+	}
+	if err := enc.EncodeString(m.NodeID); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
+}
+
+type ReceivedMessage struct {
+	Type   string             `msgpack:"type"`
+	Data   msgpack.RawMessage `msgpack:"data"`
+	NodeID string             `msgpack:"node_id"`
+}
+
+func parseMessage(data []byte) (ReceivedMessage, error) {
+	var msg ReceivedMessage
+	dec := msgpack.NewDecoder(bytes.NewReader(data))
+	if err := dec.Decode(&msg); err != nil {
+		return ReceivedMessage{}, err
+	}
+	return msg, nil
+}
+
+func (r *ReceivedMessage) Decode(v interface{}) error {
+	return msgpack.Unmarshal(r.Data, v)
+}
 
 type AckPayload struct {
 	Index int64 `msgpack:"index"`

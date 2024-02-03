@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/vmihailenco/msgpack/v5"
 )
 
 type WorkerState = int64
@@ -70,7 +69,7 @@ func generateClientID() (string, error) {
 	return hostname + "_" + uuid.NewString(), nil
 }
 
-type MessageHandler func(msg ParsedMessage)
+type MessageHandler func(msg ReceivedMessage)
 
 type Worker struct {
 	Version                string
@@ -248,7 +247,7 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 	go func() {
 		defer wg.Done()
 		for {
-			msg, err := w.transport.Receive()
+			msg, err := w.recv()
 			if err != nil {
 				w.Quit()
 				return
@@ -257,7 +256,7 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 			switch msg.Type {
 			case MessageAck:
 				var payload AckPayload
-				if err := msgpack.Unmarshal(msg.Data, &payload); err != nil {
+				if err := msg.Decode(&payload); err != nil {
 					return
 				}
 				atomic.StoreInt64(&w.index, payload.Index)
@@ -271,7 +270,7 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 
 			case MessageSpawn:
 				var payload SpawnPayload
-				if err := msgpack.Unmarshal(msg.Data, &payload); err != nil {
+				if err := msg.Decode(&payload); err != nil {
 					return
 				}
 
@@ -525,13 +524,25 @@ func (w *Worker) startMetricsMonitorProcess(ctx context.Context, wg *sync.WaitGr
 	}()
 }
 
+func (w *Worker) recv() (ReceivedMessage, error) {
+	b, err := w.transport.Receive()
+	if err != nil {
+		return ReceivedMessage{}, err
+	}
+	return parseMessage(b)
+}
+
 func (w *Worker) send(typ string, data any) error {
 	msg := Message{
 		Type:   typ,
 		Data:   data,
 		NodeID: w.ClientID,
 	}
-	return w.transport.Send(msg)
+	b, err := encodeMessage(msg)
+	if err != nil {
+		return err
+	}
+	return w.transport.Send(b)
 }
 
 func convertStatisticsPayload(entries StatisticsEntries, total *StatisticsEntry, errors StatisticsErrors) *StatsPayload {

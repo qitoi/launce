@@ -71,12 +71,7 @@ func (m *Transport) Close() error {
 	return nil
 }
 
-func (m *Transport) Send(msg launce.Message) error {
-	b, err := msg.Encode()
-	if err != nil {
-		return err
-	}
-
+func (m *Transport) Send(msg []byte) error {
 	m.mu.RLock()
 	ch := m.sendCh
 	m.mu.RUnlock()
@@ -85,7 +80,7 @@ func (m *Transport) Send(msg launce.Message) error {
 	defer m.wg.Done()
 
 	select {
-	case ch <- b:
+	case ch <- msg:
 		break
 	case <-m.ctx.Done():
 		return ErrConnectionClosed
@@ -94,7 +89,7 @@ func (m *Transport) Send(msg launce.Message) error {
 	return nil
 }
 
-func (m *Transport) Receive() (launce.ParsedMessage, error) {
+func (m *Transport) Receive() ([]byte, error) {
 	m.mu.RLock()
 	ch := m.recvCh
 	m.mu.RUnlock()
@@ -103,11 +98,11 @@ func (m *Transport) Receive() (launce.ParsedMessage, error) {
 	case b, ok := <-ch:
 		if !ok {
 			_ = m.Close()
-			return launce.ParsedMessage{}, ErrConnectionClosed
+			return nil, ErrConnectionClosed
 		}
-		return launce.ParseMessage(b)
+		return b, nil
 	case <-m.ctx.Done():
-		return launce.ParsedMessage{}, ErrConnectionClosed
+		return nil, ErrConnectionClosed
 	}
 }
 
