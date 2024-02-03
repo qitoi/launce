@@ -42,7 +42,7 @@ type Transport struct {
 	wg     sync.WaitGroup
 }
 
-func (m *Transport) Open(clientID string) error {
+func (m *Transport) Open(ctx context.Context, clientID string) error {
 	if m == m.Dest.Dest && m.sendCh != nil && m.Dest.recvCh != nil {
 		return nil
 	}
@@ -115,7 +115,7 @@ func MakeTransportSet() (*Transport, *Transport, error) {
 	t1 := &Transport{}
 	t2 := &Transport{}
 	t1.Dest, t2.Dest = t2, t1
-	if err := t2.Open(""); err != nil {
+	if err := t2.Open(context.Background(), ""); err != nil {
 		return nil, nil, err
 	}
 	return t1, t2, nil

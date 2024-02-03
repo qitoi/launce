@@ -114,7 +114,7 @@ func TestWorker_Join(t *testing.T) {
 		worker.Quit()
 	}()
 
-	if err := worker.Join(); err != nil {
+	if err := worker.Join(); err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
 

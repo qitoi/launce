@@ -26,7 +26,7 @@ import (
 )
 
 type Transport interface {
-	Open(clientID string) error
+	Open(ctx context.Context, clientID string) error
 	Close() error
 	Send(msg Message) error
 	Receive() (ParsedMessage, error)
@@ -40,18 +40,22 @@ type ZmqTransport struct {
 	Host string
 	Port int
 
+	opts   []zmq4.Option
 	socket zmq4.Socket
 }
 
-func NewZmqTransport(host string, port int) *ZmqTransport {
+func NewZmqTransport(host string, port int, opts ...zmq4.Option) *ZmqTransport {
 	return &ZmqTransport{
 		Host: host,
 		Port: port,
+
+		opts: opts,
 	}
 }
 
-func (t *ZmqTransport) Open(clientID string) error {
-	socket := zmq4.NewDealer(context.Background(), zmq4.WithID(zmq4.SocketIdentity(clientID)))
+func (t *ZmqTransport) Open(ctx context.Context, clientID string) error {
+	opts := append(t.opts, zmq4.WithID(zmq4.SocketIdentity(clientID)))
+	socket := zmq4.NewDealer(ctx, opts...)
 	err := socket.Dial(fmt.Sprintf("tcp://%s:%d", t.Host, t.Port))
 	if err != nil {
 		return err

@@ -17,6 +17,7 @@
 package launce
 
 import (
+	"context"
 	"errors"
 	"os"
 	"sync"
@@ -80,6 +81,7 @@ type Worker struct {
 	MasterHeartbeatTimeout time.Duration
 
 	runner          *Runner
+	cancel          atomic.Value
 	index           int64
 	state           WorkerState
 	transport       Transport
@@ -88,7 +90,6 @@ type Worker struct {
 	heartbeatCh     chan struct{}
 	messageHandlers map[string][]MessageHandler
 	procInfo        *ProcessInfo
-	closeCond       *sync.Cond
 }
 
 func NewWorker(transport Transport) (*Worker, error) {
@@ -121,7 +122,6 @@ func NewWorker(transport Transport) (*Worker, error) {
 		heartbeatCh:     make(chan struct{}),
 		messageHandlers: make(map[string][]MessageHandler),
 		procInfo:        procInfo,
-		closeCond:       sync.NewCond(&sync.Mutex{}),
 	}
 
 	worker.runner.ExceptionReporter = worker.reportException
@@ -132,36 +132,41 @@ func NewWorker(transport Transport) (*Worker, error) {
 func (w *Worker) Join() error {
 	var wg sync.WaitGroup
 
-	if err := w.open(); err != nil {
+	// マスターへのコネクション確立前に Quit された場合は、トランスポートのコンテキストをキャンセルし、トランスポートを閉じることで終了させる
+	ctx, cancel := context.WithCancel(context.Background())
+	w.cancel.Store(cancel)
+	if err := w.open(ctx); err != nil {
 		return err
 	}
 
-	closeCh := make(chan struct{})
-	go func() {
-		w.closeCond.L.Lock()
-		w.closeCond.Wait()
-		w.closeCond.L.Unlock()
-		close(closeCh)
-	}()
+	// マスターへのコネクション確立後に Quit された場合は、トランスポートを閉じる前に quit メッセージを送るため
+	// トランスポートは閉じずに goroutine 終了のためのコンテキストキャンセルに切り替える
+	ctx, cancel = context.WithCancel(context.Background())
+	w.cancel.Store(cancel)
 
 	w.startMessageProcess(&wg)
 
-	if err := w.connect(); err != nil {
+	// マスターへの client_ready 送信、 ack 受信による疎通の確認
+	if err := w.connect(ctx); err != nil {
 		_ = w.close()
 		return err
 	}
 
 	var procWg sync.WaitGroup
 
-	w.startHeartbeatProcess(&procWg, w.HeartbeatInterval, closeCh)
-	w.startHeartbeatCheckProcess(&procWg, w.MasterHeartbeatTimeout, closeCh)
-	w.startMetricsMonitorProcess(&procWg, w.MetricsMonitorInterval, closeCh)
-	w.startStatsProcess(&procWg, w.StatsReportInterval, closeCh)
-	w.startSpawnProcess(&procWg, closeCh)
+	w.startHeartbeatProcess(ctx, &procWg, w.HeartbeatInterval)
+	w.startHeartbeatCheckProcess(ctx, &procWg, w.MasterHeartbeatTimeout)
+	w.startMetricsMonitorProcess(ctx, &procWg, w.MetricsMonitorInterval)
+	w.startStatsProcess(ctx, &procWg, w.StatsReportInterval)
+	w.startSpawnProcess(ctx, &procWg)
 
 	procWg.Wait()
 
-	_ = w.send(MessageQuit, nil)
+	// ワーカーの終了時はマスターに quit メッセージを送信する
+	if err := w.send(MessageQuit, nil); err != nil {
+		_ = w.close()
+		return err
+	}
 
 	if err := w.close(); err != nil {
 		return err
@@ -183,30 +188,32 @@ func (w *Worker) Stop() {
 
 func (w *Worker) Quit() {
 	w.Stop()
-	w.closeCond.L.Lock()
-	w.closeCond.Broadcast()
-	w.closeCond.L.Unlock()
+	if f := w.cancel.Load(); f != nil {
+		if cancel, ok := f.(context.CancelFunc); ok {
+			cancel()
+		}
+	}
 }
 
-func (w *Worker) open() error {
-	return w.transport.Open(w.ClientID)
+func (w *Worker) open(ctx context.Context) error {
+	return w.transport.Open(ctx, w.ClientID)
 }
 
 func (w *Worker) close() error {
 	return w.transport.Close()
 }
 
-func (w *Worker) connect() error {
+func (w *Worker) connect(ctx context.Context) error {
 	retry := 0
 	ticker := time.NewTicker(connectTimeout)
 	defer ticker.Stop()
 
-flushLoop:
+clear:
 	for {
 		select {
 		case <-w.ackCh:
 		default:
-			break flushLoop
+			break clear
 		}
 	}
 
@@ -226,6 +233,9 @@ loop:
 
 		case <-w.ackCh:
 			break loop
+
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
 
@@ -240,6 +250,7 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 		for {
 			msg, err := w.transport.Receive()
 			if err != nil {
+				w.Quit()
 				return
 			}
 
@@ -290,7 +301,7 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 
 			case MessageReconnect:
 				_ = w.close()
-				_ = w.open()
+				_ = w.open(context.Background())
 				break
 
 			case MessageHeartbeat:
@@ -347,7 +358,7 @@ func (w *Worker) reportException(err error) {
 	})
 }
 
-func (w *Worker) startSpawnProcess(wg *sync.WaitGroup, closeCh chan struct{}) {
+func (w *Worker) startSpawnProcess(ctx context.Context, wg *sync.WaitGroup) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -383,14 +394,14 @@ func (w *Worker) startSpawnProcess(wg *sync.WaitGroup, closeCh chan struct{}) {
 
 				break
 
-			case <-closeCh:
+			case <-ctx.Done():
 				break loop
 			}
 		}
 	}()
 }
 
-func (w *Worker) startHeartbeatProcess(wg *sync.WaitGroup, interval time.Duration, closeCh chan struct{}) {
+func (w *Worker) startHeartbeatProcess(ctx context.Context, wg *sync.WaitGroup, interval time.Duration) {
 	if interval <= 0 {
 		return
 	}
@@ -415,14 +426,14 @@ func (w *Worker) startHeartbeatProcess(wg *sync.WaitGroup, interval time.Duratio
 				_ = w.send(MessageHeartbeat, msg)
 				break
 
-			case <-closeCh:
+			case <-ctx.Done():
 				break loop
 			}
 		}
 	}()
 }
 
-func (w *Worker) startHeartbeatCheckProcess(wg *sync.WaitGroup, timeout time.Duration, closeCh chan struct{}) {
+func (w *Worker) startHeartbeatCheckProcess(ctx context.Context, wg *sync.WaitGroup, timeout time.Duration) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -444,14 +455,14 @@ func (w *Worker) startHeartbeatCheckProcess(wg *sync.WaitGroup, timeout time.Dur
 				w.Quit()
 				break loop
 
-			case <-closeCh:
+			case <-ctx.Done():
 				break loop
 			}
 		}
 	}()
 }
 
-func (w *Worker) startStatsProcess(wg *sync.WaitGroup, interval time.Duration, closeCh chan struct{}) {
+func (w *Worker) startStatsProcess(ctx context.Context, wg *sync.WaitGroup, interval time.Duration) {
 	if interval <= 0 {
 		return
 	}
@@ -470,7 +481,7 @@ func (w *Worker) startStatsProcess(wg *sync.WaitGroup, interval time.Duration, c
 				_ = w.sendStats()
 				break
 
-			case <-closeCh:
+			case <-ctx.Done():
 				break loop
 			}
 		}
@@ -486,7 +497,7 @@ func (w *Worker) sendStats() error {
 	return w.send(MessageStats, payload)
 }
 
-func (w *Worker) startMetricsMonitorProcess(wg *sync.WaitGroup, interval time.Duration, closeCh chan struct{}) {
+func (w *Worker) startMetricsMonitorProcess(ctx context.Context, wg *sync.WaitGroup, interval time.Duration) {
 	if interval <= 0 {
 		return
 	}
@@ -507,7 +518,7 @@ func (w *Worker) startMetricsMonitorProcess(wg *sync.WaitGroup, interval time.Du
 				_ = w.procInfo.Update()
 				break
 
-			case <-closeCh:
+			case <-ctx.Done():
 				break loop
 			}
 		}
