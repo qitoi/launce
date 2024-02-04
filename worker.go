@@ -376,12 +376,11 @@ func (w *Worker) startSpawnProcess(ctx context.Context, wg *sync.WaitGroup) {
 				}
 
 				payload := &SpawningCompletePayload{
-					UserClassesCount: users,
-					UserCount:        total,
+					UserClassesCount: make(map[string]int64),
+					UserCount:        0,
 				}
-
 				for name, count := range spawnCount {
-					if err := w.runner.Spawn(name, int(count)); err != nil {
+					if err := w.runner.Spawn(name, int(count)); err == nil {
 						payload.UserCount += count
 						payload.UserClassesCount[name] = count
 					}
