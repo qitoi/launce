@@ -79,6 +79,14 @@ func (b *BaseUser) WaitTime() WaitTimeFunc {
 	return Constant(0)
 }
 
+func (b *BaseUser) OnStart(ctx context.Context) error {
+	return nil
+}
+
+func (b *BaseUser) OnStop(ctx context.Context) error {
+	return nil
+}
+
 func ProcessUser(ctx context.Context, user User) error {
 	if err := user.OnStart(ctx); err != nil {
 		if errors.Is(err, StopUser) {
