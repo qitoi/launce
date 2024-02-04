@@ -21,8 +21,11 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 )
+
+type hostKey struct{}
 
 type Runner struct {
 	SpawnMode         SpawnMode
@@ -30,6 +33,8 @@ type Runner struct {
 
 	userSpawners map[string]*Spawner
 	statistics   *Statistics
+
+	host atomic.Value
 
 	parsedOptions      *ParsedOptions
 	parsedOptionsMutex sync.RWMutex
@@ -44,6 +49,10 @@ func NewRunner() (*Runner, error) {
 	}, nil
 }
 
+func (r *Runner) SetHost(host string) {
+	r.host.Store(host)
+}
+
 func (r *Runner) SetParsedOptions(options *ParsedOptions) {
 	r.parsedOptionsMutex.Lock()
 	defer r.parsedOptionsMutex.Unlock()
@@ -56,7 +65,15 @@ func (r *Runner) RegisterUser(name string, f UserGenerator) {
 		parsedOptions := r.parsedOptions
 		r.parsedOptionsMutex.RUnlock()
 
+		host := ""
+		if h := r.host.Load(); r != nil {
+			if s, ok := h.(string); ok {
+				host = s
+			}
+		}
+
 		ctx = withParsedOptions(ctx, parsedOptions)
+		ctx = withHost(ctx, host)
 
 		user := f()
 		user.Init(r, user.WaitTime())
@@ -116,4 +133,15 @@ func (r *Runner) ReportException(err error) {
 
 func (r *Runner) FlushStats() (StatisticsEntries, *StatisticsEntry, StatisticsErrors) {
 	return r.statistics.Move()
+}
+
+func withHost(ctx context.Context, host string) context.Context {
+	return context.WithValue(ctx, hostKey{}, host)
+}
+
+func Host(ctx context.Context) string {
+	if s, ok := ctx.Value(hostKey{}).(string); ok {
+		return s
+	}
+	return ""
 }

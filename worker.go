@@ -19,6 +19,7 @@ package launce
 import (
 	"context"
 	"errors"
+	"math"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -89,6 +90,8 @@ type Worker struct {
 	heartbeatCh     chan struct{}
 	messageHandlers map[string][]MessageHandler
 	procInfo        *ProcessInfo
+
+	lastReceivedSpawnTimestamp atomic.Uint64
 }
 
 func NewWorker(transport Transport) (*Worker, error) {
@@ -274,11 +277,18 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 					return
 				}
 
+				timestamp := payload.Timestamp
+				lastReceived := math.Float64frombits(w.lastReceivedSpawnTimestamp.Load())
+				if timestamp <= lastReceived {
+					break
+				}
+
 				parsedOptions, err := NewParsedOptions(payload.ParsedOptions)
 				if err != nil {
 					return
 				}
 
+				w.runner.SetHost(payload.Host)
 				w.runner.SetParsedOptions(parsedOptions)
 
 				state := atomic.LoadInt64(&w.state)
@@ -288,6 +298,8 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 				}
 
 				w.spawnCh <- payload.UserClassesCount
+
+				w.lastReceivedSpawnTimestamp.Store(math.Float64bits(timestamp))
 				break
 
 			case MessageStop:
