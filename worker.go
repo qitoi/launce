@@ -347,6 +347,14 @@ func (w *Worker) RegisterMessage(typ string, handler MessageHandler) {
 	w.messageHandlers[typ] = append(w.messageHandlers[typ], handler)
 }
 
+func (w *Worker) OnTestStart(f func(ctx context.Context)) {
+	w.runner.OnTestStart(f)
+}
+
+func (w *Worker) OnTestStop(f func(ctx context.Context)) {
+	w.runner.OnTestStop(f)
+}
+
 func (w *Worker) Index() int64 {
 	return atomic.LoadInt64(&w.index)
 }

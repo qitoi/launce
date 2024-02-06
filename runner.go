@@ -38,6 +38,9 @@ type Runner struct {
 
 	parsedOptions      *ParsedOptions
 	parsedOptionsMutex sync.RWMutex
+
+	testStartHandlers []func(ctx context.Context)
+	testStopHandlers  []func(ctx context.Context)
 }
 
 func NewRunner() (*Runner, error) {
@@ -59,22 +62,9 @@ func (r *Runner) SetParsedOptions(options *ParsedOptions) {
 	r.parsedOptions = options
 }
 
-func (r *Runner) RegisterUser(name string, f UserGenerator) {
+func (r *Runner) RegisterUser(name string, f func() User) {
 	spawnFunc := func(ctx context.Context) {
-		r.parsedOptionsMutex.RLock()
-		parsedOptions := r.parsedOptions
-		r.parsedOptionsMutex.RUnlock()
-
-		host := ""
-		if h := r.host.Load(); r != nil {
-			if s, ok := h.(string); ok {
-				host = s
-			}
-		}
-
-		ctx = withParsedOptions(ctx, parsedOptions)
-		ctx = withHost(ctx, host)
-
+		ctx = r.context(ctx)
 		user := f()
 		user.Init(r, user.WaitTime())
 		if err := ProcessUser(ctx, user); err != nil {
@@ -85,7 +75,19 @@ func (r *Runner) RegisterUser(name string, f UserGenerator) {
 	r.userSpawners[name] = NewSpawner(spawnFunc, r.SpawnMode)
 }
 
+func (r *Runner) OnTestStart(f func(ctx context.Context)) {
+	r.testStartHandlers = append(r.testStartHandlers, f)
+}
+
+func (r *Runner) OnTestStop(f func(ctx context.Context)) {
+	r.testStopHandlers = append(r.testStopHandlers, f)
+}
+
 func (r *Runner) Start() {
+	ctx := r.context(context.Background())
+	for _, f := range r.testStartHandlers {
+		f(ctx)
+	}
 	for _, spawner := range r.userSpawners {
 		spawner.Start()
 	}
@@ -95,6 +97,10 @@ func (r *Runner) Stop() {
 	for _, spawner := range r.userSpawners {
 		spawner.Stop()
 		spawner.StopAllUsers()
+	}
+	ctx := r.context(context.Background())
+	for _, f := range r.testStopHandlers {
+		f(ctx)
 	}
 }
 
@@ -133,6 +139,24 @@ func (r *Runner) ReportException(err error) {
 
 func (r *Runner) FlushStats() (StatisticsEntries, *StatisticsEntry, StatisticsErrors) {
 	return r.statistics.Move()
+}
+
+func (r *Runner) context(ctx context.Context) context.Context {
+	r.parsedOptionsMutex.RLock()
+	parsedOptions := r.parsedOptions
+	r.parsedOptionsMutex.RUnlock()
+
+	host := ""
+	if h := r.host.Load(); r != nil {
+		if s, ok := h.(string); ok {
+			host = s
+		}
+	}
+
+	ctx = withParsedOptions(ctx, parsedOptions)
+	ctx = withHost(ctx, host)
+
+	return ctx
 }
 
 func withHost(ctx context.Context, host string) context.Context {
