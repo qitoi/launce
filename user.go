@@ -44,8 +44,6 @@ func Wait(ctx context.Context, d time.Duration) error {
 	}
 }
 
-type UserGenerator func() User
-
 type Reporter interface {
 	Report(requestType, name string, opts ...StatisticsOption)
 	ReportException(err error)

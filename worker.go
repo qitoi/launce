@@ -339,7 +339,7 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 	}()
 }
 
-func (w *Worker) RegisterUser(name string, f UserGenerator) {
+func (w *Worker) RegisterUser(name string, f func() User) {
 	w.runner.RegisterUser(name, f)
 }
 

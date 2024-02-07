@@ -137,7 +137,7 @@ func (uc *UserController) WaitStop(n uint64) {
 	uc.stopCond.L.Unlock()
 }
 
-func UserGenerator(f func(ctx context.Context, u *User) error) (launce.UserGenerator, *UserStats, *UserController) {
+func UserGenerator(f func(ctx context.Context, u *User) error) (func() launce.User, *UserStats, *UserController) {
 	var id int64
 	var stats UserStats
 	stats.Loop = map[int64]int{}
