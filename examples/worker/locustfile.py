@@ -1,4 +1,3 @@
-import time
 from locust import User, task
 
 class TestUser(User):
