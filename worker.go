@@ -259,7 +259,7 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 			switch msg.Type {
 			case MessageAck:
 				var payload AckPayload
-				if err := msg.Decode(&payload); err != nil {
+				if err := msg.DecodePayload(&payload); err != nil {
 					return
 				}
 				atomic.StoreInt64(&w.index, payload.Index)
@@ -273,7 +273,7 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 
 			case MessageSpawn:
 				var payload SpawnPayload
-				if err := msg.Decode(&payload); err != nil {
+				if err := msg.DecodePayload(&payload); err != nil {
 					return
 				}
 
@@ -548,7 +548,7 @@ func (w *Worker) recv() (ReceivedMessage, error) {
 	if err != nil {
 		return ReceivedMessage{}, err
 	}
-	return parseMessage(b)
+	return decodeMessage(b)
 }
 
 func (w *Worker) send(typ string, data any) error {
