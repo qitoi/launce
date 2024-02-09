@@ -23,7 +23,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/vmihailenco/msgpack/v5"
 
@@ -35,6 +34,46 @@ var (
 	parsedOptions, _ = msgpack.Marshal(launce.ParsedOptions{})
 )
 
+type MasterTransport struct {
+	transport *mock.Transport
+	lastSpawn float64
+}
+
+func (m *MasterTransport) Send(msg launce.Message) error {
+	b, err := launce.EncodeMessage(msg)
+	if err != nil {
+		return err
+	}
+	return m.transport.Send(b)
+}
+
+func (m *MasterTransport) Receive() (launce.ReceivedMessage, error) {
+	b, err := m.transport.Receive()
+	if err != nil {
+		return launce.ReceivedMessage{}, err
+	}
+	msg, err := launce.DecodeMessage(b)
+	if err != nil {
+		return launce.ReceivedMessage{}, err
+	}
+	return msg, nil
+}
+
+func (m *MasterTransport) SendSpawn(users map[string]int64, nodeID string) error {
+	m.lastSpawn += 1
+	return m.Send(launce.Message{
+		Type: launce.MessageSpawn,
+		Data: launce.SpawnPayload{
+			Timestamp:        m.lastSpawn,
+			UserClassesCount: users,
+			Host:             "",
+			StopTimeout:      0,
+			ParsedOptions:    parsedOptions,
+		},
+		NodeID: nodeID,
+	})
+}
+
 func extractMessageData[T any](msg launce.ReceivedMessage) T {
 	var v T
 	if err := msgpack.Unmarshal(msg.Data, &v); err != nil {
@@ -44,7 +83,7 @@ func extractMessageData[T any](msg launce.ReceivedMessage) T {
 	return v
 }
 
-func setupWorker(t *testing.T) (*launce.Worker, *mock.Transport) {
+func setupWorker(t *testing.T) (*launce.Worker, *MasterTransport) {
 	t.Helper()
 
 	masterTransport, workerTransport, err := mock.MakeTransportSet()
@@ -61,10 +100,10 @@ func setupWorker(t *testing.T) (*launce.Worker, *mock.Transport) {
 	worker.StatsReportInterval = 0
 	worker.MetricsMonitorInterval = 0
 
-	return worker, masterTransport
+	return worker, &MasterTransport{transport: masterTransport}
 }
 
-func startMasterReceiver(wg *sync.WaitGroup, master launce.Transport, filterMessages ...string) (<-chan launce.ReceivedMessage, func()) {
+func startMasterReceiver(wg *sync.WaitGroup, master *MasterTransport, filterMessages ...string) (<-chan launce.ReceivedMessage, func()) {
 	ch := make(chan launce.ReceivedMessage)
 
 	readyCh := make(chan struct{})
@@ -76,16 +115,12 @@ func startMasterReceiver(wg *sync.WaitGroup, master launce.Transport, filterMess
 		defer wg.Done()
 
 		for {
-			b, err := master.Receive()
-			if err != nil {
-				return
-			}
-			msg, err := launce.DecodeMessage(b)
+			msg, err := master.Receive()
 			if err != nil {
 				return
 			}
 			if msg.Type == "client_ready" {
-				_ = send(master, launce.Message{
+				_ = master.Send(launce.Message{
 					Type:   launce.MessageAck,
 					Data:   launce.AckPayload{Index: 1},
 					NodeID: msg.NodeID,
@@ -163,7 +198,7 @@ func TestWorker_RegisterMessage(t *testing.T) {
 
 	waitForReady()
 
-	_ = send(master, launce.Message{
+	_ = master.Send(launce.Message{
 		Type:   "custom-message",
 		Data:   "hello",
 		NodeID: worker.ClientID,
@@ -209,7 +244,7 @@ func TestWorker_RegisterMessage_MultipleReceivers(t *testing.T) {
 
 	waitForReady()
 
-	_ = send(master, launce.Message{
+	_ = master.Send(launce.Message{
 		Type:   "custom-message",
 		Data:   "hello",
 		NodeID: worker.ClientID,
@@ -251,12 +286,12 @@ func TestWorker_RegisterMessage_MultipleMessages(t *testing.T) {
 
 	waitForReady()
 
-	_ = send(master, launce.Message{
+	_ = master.Send(launce.Message{
 		Type:   "custom-message1",
 		Data:   "foo",
 		NodeID: worker.ClientID,
 	})
-	_ = send(master, launce.Message{
+	_ = master.Send(launce.Message{
 		Type:   "custom-message2",
 		Data:   "bar",
 		NodeID: worker.ClientID,
@@ -296,19 +331,9 @@ func TestWorker_RegisterUser(t *testing.T) {
 
 	waitForReady()
 
-	_ = send(master, launce.Message{
-		Type: launce.MessageSpawn,
-		Data: launce.SpawnPayload{
-			Timestamp: float64(time.Now().UnixNano()) / 1e6,
-			UserClassesCount: map[string]int64{
-				"test-user": 3,
-			},
-			Host:          "",
-			StopTimeout:   0,
-			ParsedOptions: parsedOptions,
-		},
-		NodeID: worker.ClientID,
-	})
+	_ = master.SendSpawn(map[string]int64{
+		"test-user": 3,
+	}, worker.ClientID)
 
 	uc.WaitStart(3)
 
@@ -316,19 +341,9 @@ func TestWorker_RegisterUser(t *testing.T) {
 		t.Fatalf("unexpected started user. got:%v want:%v", n, 3)
 	}
 
-	_ = send(master, launce.Message{
-		Type: launce.MessageSpawn,
-		Data: launce.SpawnPayload{
-			Timestamp: float64(time.Now().UnixNano()) / 1e6,
-			UserClassesCount: map[string]int64{
-				"test-user": 5,
-			},
-			Host:          "",
-			StopTimeout:   0,
-			ParsedOptions: parsedOptions,
-		},
-		NodeID: worker.ClientID,
-	})
+	_ = master.SendSpawn(map[string]int64{
+		"test-user": 5,
+	}, worker.ClientID)
 
 	uc.WaitStart(5)
 
@@ -336,19 +351,9 @@ func TestWorker_RegisterUser(t *testing.T) {
 		t.Fatalf("unexpected started user. got:%v want:%v", n, 5)
 	}
 
-	_ = send(master, launce.Message{
-		Type: launce.MessageSpawn,
-		Data: launce.SpawnPayload{
-			Timestamp: float64(time.Now().UnixNano()) / 1e6,
-			UserClassesCount: map[string]int64{
-				"test-user": 1,
-			},
-			Host:          "",
-			StopTimeout:   0,
-			ParsedOptions: parsedOptions,
-		},
-		NodeID: worker.ClientID,
-	})
+	_ = master.SendSpawn(map[string]int64{
+		"test-user": 1,
+	}, worker.ClientID)
 
 	uc.WaitStop(4)
 
@@ -395,19 +400,9 @@ func TestWorker_SpawnMessage(t *testing.T) {
 		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageClientReady)
 	}
 
-	_ = send(master, launce.Message{
-		Type: launce.MessageSpawn,
-		Data: launce.SpawnPayload{
-			Timestamp: float64(time.Now().UnixNano()) / 1e6,
-			UserClassesCount: map[string]int64{
-				"test-user": 3,
-			},
-			Host:          "",
-			StopTimeout:   0,
-			ParsedOptions: parsedOptions,
-		},
-		NodeID: worker.ClientID,
-	})
+	_ = master.SendSpawn(map[string]int64{
+		"test-user": 3,
+	}, worker.ClientID)
 
 	msg = <-masterCh
 	if msg.Type != launce.MessageSpawning {
@@ -421,7 +416,7 @@ func TestWorker_SpawnMessage(t *testing.T) {
 
 	uc.WaitStart(3)
 
-	_ = send(master, launce.Message{
+	_ = master.Send(launce.Message{
 		Type:   launce.MessageStop,
 		Data:   nil,
 		NodeID: worker.ClientID,
@@ -469,7 +464,7 @@ func TestWorker_QuitMessage(t *testing.T) {
 		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageClientReady)
 	}
 
-	_ = send(master, launce.Message{
+	_ = master.Send(launce.Message{
 		Type:   launce.MessageQuit,
 		Data:   nil,
 		NodeID: worker.ClientID,
@@ -508,19 +503,9 @@ func TestWorker_ExceptionMessage(t *testing.T) {
 
 	waitForReady()
 
-	_ = send(master, launce.Message{
-		Type: launce.MessageSpawn,
-		Data: launce.SpawnPayload{
-			Timestamp: float64(time.Now().UnixNano()) / 1e6,
-			UserClassesCount: map[string]int64{
-				"test-user": 3,
-			},
-			Host:          "",
-			StopTimeout:   0,
-			ParsedOptions: parsedOptions,
-		},
-		NodeID: worker.ClientID,
-	})
+	_ = master.SendSpawn(map[string]int64{
+		"test-user": 3,
+	}, worker.ClientID)
 
 	uc.WaitStart(1)
 
@@ -534,12 +519,4 @@ func TestWorker_ExceptionMessage(t *testing.T) {
 	}
 
 	wg.Wait()
-}
-
-func send(t launce.Transport, msg launce.Message) error {
-	b, err := launce.EncodeMessage(msg)
-	if err != nil {
-		return err
-	}
-	return t.Send(b)
 }
