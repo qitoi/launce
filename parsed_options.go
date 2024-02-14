@@ -17,8 +17,6 @@
 package launce
 
 import (
-	"context"
-
 	"github.com/vmihailenco/msgpack/v5"
 )
 
@@ -114,15 +112,4 @@ func NewParsedOptions(buf []byte) (*ParsedOptions, error) {
 
 func (p *ParsedOptions) Decode(v interface{}) error {
 	return msgpack.Unmarshal(p.buf, v)
-}
-
-func withParsedOptions(ctx context.Context, opt *ParsedOptions) context.Context {
-	return context.WithValue(ctx, parsedOptionsKey{}, opt)
-}
-
-func Option(ctx context.Context) *ParsedOptions {
-	if opt, ok := ctx.Value(parsedOptionsKey{}).(*ParsedOptions); ok {
-		return opt
-	}
-	return &ParsedOptions{}
 }

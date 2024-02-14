@@ -33,7 +33,7 @@ type User struct {
 }
 
 func (u *User) OnStart(ctx context.Context) error {
-	option := launce.Option(ctx)
+	option := u.Runner().ParsedOptions()
 
 	var opts []FilterOption
 	if option.Tags != nil {

@@ -24,7 +24,13 @@ import (
 	"time"
 )
 
+var (
+	_ Runner = (*LoadRunner)(nil)
+)
+
 type Runner interface {
+	Host() string
+	ParsedOptions() *ParsedOptions
 	Report(requestType, name string, opts ...StatisticsOption)
 	ReportException(err error)
 	SendMessage(typ string, data any) error
@@ -57,8 +63,21 @@ func NewLoadRunner() (*LoadRunner, error) {
 	}, nil
 }
 
+func (l *LoadRunner) Host() string {
+	if h := l.host.Load(); l != nil {
+		if s, ok := h.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
 func (l *LoadRunner) SetHost(host string) {
 	l.host.Store(host)
+}
+
+func (l *LoadRunner) ParsedOptions() *ParsedOptions {
+	return l.parsedOptions.Load()
 }
 
 func (l *LoadRunner) SetParsedOptions(options *ParsedOptions) {
@@ -67,7 +86,6 @@ func (l *LoadRunner) SetParsedOptions(options *ParsedOptions) {
 
 func (l *LoadRunner) RegisterUser(name string, f func() User) {
 	spawnFunc := func(ctx context.Context) {
-		ctx = l.context(ctx)
 		user := f()
 		user.Init(l, user.WaitTime())
 		if err := ProcessUser(ctx, user); err != nil {
@@ -106,7 +124,7 @@ func (l *LoadRunner) OnTestStop(f func(ctx context.Context)) {
 }
 
 func (l *LoadRunner) Start() {
-	ctx := l.context(context.Background())
+	ctx := context.Background()
 	for _, f := range l.testStartHandlers {
 		f(ctx)
 	}
@@ -120,7 +138,7 @@ func (l *LoadRunner) Stop() {
 		spawner.Stop()
 		spawner.StopAllUsers()
 	}
-	ctx := l.context(context.Background())
+	ctx := context.Background()
 	for _, f := range l.testStopHandlers {
 		f(ctx)
 	}
@@ -161,33 +179,4 @@ func (l *LoadRunner) ReportException(err error) {
 
 func (l *LoadRunner) FlushStats() (StatisticsEntries, *StatisticsEntry, StatisticsErrors) {
 	return l.statistics.Move()
-}
-
-func (l *LoadRunner) context(ctx context.Context) context.Context {
-	parsedOptions := l.parsedOptions.Load()
-
-	host := ""
-	if h := l.host.Load(); l != nil {
-		if s, ok := h.(string); ok {
-			host = s
-		}
-	}
-
-	ctx = withParsedOptions(ctx, parsedOptions)
-	ctx = withHost(ctx, host)
-
-	return ctx
-}
-
-type hostKey struct{}
-
-func withHost(ctx context.Context, host string) context.Context {
-	return context.WithValue(ctx, hostKey{}, host)
-}
-
-func Host(ctx context.Context) string {
-	if s, ok := ctx.Value(hostKey{}).(string); ok {
-		return s
-	}
-	return ""
 }
