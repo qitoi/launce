@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -39,10 +38,8 @@ type LoadRunner struct {
 	userSpawners map[string]*Spawner
 	statistics   *Statistics
 
-	host atomic.Value
-
-	parsedOptions      *ParsedOptions
-	parsedOptionsMutex sync.RWMutex
+	host          atomic.Value
+	parsedOptions atomic.Pointer[ParsedOptions]
 
 	testStartHandlers []func(ctx context.Context)
 	testStopHandlers  []func(ctx context.Context)
@@ -65,9 +62,7 @@ func (l *LoadRunner) SetHost(host string) {
 }
 
 func (l *LoadRunner) SetParsedOptions(options *ParsedOptions) {
-	l.parsedOptionsMutex.Lock()
-	defer l.parsedOptionsMutex.Unlock()
-	l.parsedOptions = options
+	l.parsedOptions.Store(options)
 }
 
 func (l *LoadRunner) RegisterUser(name string, f func() User) {
@@ -169,9 +164,7 @@ func (l *LoadRunner) FlushStats() (StatisticsEntries, *StatisticsEntry, Statisti
 }
 
 func (l *LoadRunner) context(ctx context.Context) context.Context {
-	l.parsedOptionsMutex.RLock()
-	parsedOptions := l.parsedOptions
-	l.parsedOptionsMutex.RUnlock()
+	parsedOptions := l.parsedOptions.Load()
 
 	host := ""
 	if h := l.host.Load(); l != nil {
