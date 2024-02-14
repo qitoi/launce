@@ -487,7 +487,7 @@ func TestWorker_ExceptionMessage(t *testing.T) {
 	first.Store(true)
 	userFunc, _, uc := mock.UserGenerator(func(ctx context.Context, u *mock.User) error {
 		if first.Swap(false) {
-			u.ReportException(errTest)
+			u.Runner().ReportException(errTest)
 			return nil
 		}
 		return Wait(ctx)

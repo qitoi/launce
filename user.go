@@ -47,8 +47,7 @@ func Wait(ctx context.Context, d time.Duration) error {
 type User interface {
 	Init(r Runner, waitTime WaitTimeFunc)
 
-	Report(requestType, name string, opts ...StatisticsOption)
-	ReportException(err error)
+	Runner() Runner
 
 	Wait(ctx context.Context) error
 	WaitTime() WaitTimeFunc
@@ -59,13 +58,17 @@ type User interface {
 }
 
 type BaseUser struct {
-	Runner
 	Waiter
+	runner Runner
 }
 
 func (b *BaseUser) Init(r Runner, waitTime WaitTimeFunc) {
-	b.Runner = r
+	b.runner = r
 	b.Waiter.Init(waitTime)
+}
+
+func (b *BaseUser) Runner() Runner {
+	return b.runner
 }
 
 func (b *BaseUser) WaitTime() WaitTimeFunc {

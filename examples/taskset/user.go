@@ -47,7 +47,7 @@ func (u *User) WaitTime() launce.WaitTimeFunc {
 }
 
 func foo(ctx context.Context, user launce.User) error {
-	user.Report(
+	user.Runner().Report(
 		http.MethodGet,
 		"/foo",
 		launce.WithResponseTime(100*time.Millisecond),
@@ -56,7 +56,7 @@ func foo(ctx context.Context, user launce.User) error {
 }
 
 func (u *User) bar(ctx context.Context, user launce.User) error {
-	u.Report(
+	u.Runner().Report(
 		http.MethodGet,
 		"/bar",
 		launce.WithResponseTime(100*time.Millisecond),
@@ -65,7 +65,7 @@ func (u *User) bar(ctx context.Context, user launce.User) error {
 }
 
 func (u *User) seq1(ctx context.Context, user launce.User) error {
-	u.Report(
+	u.Runner().Report(
 		http.MethodGet,
 		"/seq/1",
 		launce.WithResponseTime(100*time.Millisecond),
@@ -74,7 +74,7 @@ func (u *User) seq1(ctx context.Context, user launce.User) error {
 }
 
 func (u *User) seq2(ctx context.Context, user launce.User) error {
-	u.Report(
+	u.Runner().Report(
 		http.MethodGet,
 		"/seq/2",
 		launce.WithResponseTime(100*time.Millisecond),
@@ -85,7 +85,7 @@ func (u *User) seq2(ctx context.Context, user launce.User) error {
 type seq3 struct{}
 
 func (s *seq3) Run(ctx context.Context, user launce.User) error {
-	user.Report(
+	user.Runner().Report(
 		http.MethodGet,
 		"/seq/3",
 		launce.WithResponseTime(100*time.Millisecond),
