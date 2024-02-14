@@ -25,11 +25,16 @@ import (
 	"time"
 )
 
-type hostKey struct{}
+type Runner interface {
+	Report(requestType, name string, opts ...StatisticsOption)
+	ReportException(err error)
+	SendMessage(typ string, data any) error
+}
 
-type Runner struct {
-	SpawnMode         SpawnMode
-	ExceptionReporter func(error)
+type LoadRunner struct {
+	SpawnMode           SpawnMode
+	ReportExceptionFunc func(error)
+	SendMessageFunc     func(typ string, data any) error
 
 	userSpawners map[string]*Spawner
 	statistics   *Statistics
@@ -41,113 +46,135 @@ type Runner struct {
 
 	testStartHandlers []func(ctx context.Context)
 	testStopHandlers  []func(ctx context.Context)
+	messageHandlers   map[string][]MessageHandler
 }
 
-func NewRunner() (*Runner, error) {
-	return &Runner{
+func NewLoadRunner() (*LoadRunner, error) {
+	return &LoadRunner{
 		SpawnMode: SpawnOnce,
 
 		userSpawners: map[string]*Spawner{},
 		statistics:   newStatistics(),
+
+		messageHandlers: map[string][]MessageHandler{},
 	}, nil
 }
 
-func (r *Runner) SetHost(host string) {
-	r.host.Store(host)
+func (l *LoadRunner) SetHost(host string) {
+	l.host.Store(host)
 }
 
-func (r *Runner) SetParsedOptions(options *ParsedOptions) {
-	r.parsedOptionsMutex.Lock()
-	defer r.parsedOptionsMutex.Unlock()
-	r.parsedOptions = options
+func (l *LoadRunner) SetParsedOptions(options *ParsedOptions) {
+	l.parsedOptionsMutex.Lock()
+	defer l.parsedOptionsMutex.Unlock()
+	l.parsedOptions = options
 }
 
-func (r *Runner) RegisterUser(name string, f func() User) {
+func (l *LoadRunner) RegisterUser(name string, f func() User) {
 	spawnFunc := func(ctx context.Context) {
-		ctx = r.context(ctx)
+		ctx = l.context(ctx)
 		user := f()
-		user.Init(r, user.WaitTime())
+		user.Init(l, user.WaitTime())
 		if err := ProcessUser(ctx, user); err != nil {
 			if !errors.Is(err, context.Canceled) {
 			}
 		}
 	}
-	r.userSpawners[name] = NewSpawner(spawnFunc, r.SpawnMode)
+	l.userSpawners[name] = NewSpawner(spawnFunc, l.SpawnMode)
 }
 
-func (r *Runner) OnTestStart(f func(ctx context.Context)) {
-	r.testStartHandlers = append(r.testStartHandlers, f)
+func (l *LoadRunner) RegisterMessage(typ string, handler MessageHandler) {
+	l.messageHandlers[typ] = append(l.messageHandlers[typ], handler)
 }
 
-func (r *Runner) OnTestStop(f func(ctx context.Context)) {
-	r.testStopHandlers = append(r.testStopHandlers, f)
+func (l *LoadRunner) HandleMessage(msg ReceivedMessage) {
+	if handlers, ok := l.messageHandlers[msg.Type]; ok {
+		for _, handler := range handlers {
+			handler(msg)
+		}
+	}
 }
 
-func (r *Runner) Start() {
-	ctx := r.context(context.Background())
-	for _, f := range r.testStartHandlers {
+func (l *LoadRunner) SendMessage(typ string, data any) error {
+	if l.SendMessageFunc != nil {
+		return l.SendMessageFunc(typ, data)
+	}
+	return nil
+}
+
+func (l *LoadRunner) OnTestStart(f func(ctx context.Context)) {
+	l.testStartHandlers = append(l.testStartHandlers, f)
+}
+
+func (l *LoadRunner) OnTestStop(f func(ctx context.Context)) {
+	l.testStopHandlers = append(l.testStopHandlers, f)
+}
+
+func (l *LoadRunner) Start() {
+	ctx := l.context(context.Background())
+	for _, f := range l.testStartHandlers {
 		f(ctx)
 	}
-	for _, spawner := range r.userSpawners {
+	for _, spawner := range l.userSpawners {
 		spawner.Start()
 	}
 }
 
-func (r *Runner) Stop() {
-	for _, spawner := range r.userSpawners {
+func (l *LoadRunner) Stop() {
+	for _, spawner := range l.userSpawners {
 		spawner.Stop()
 		spawner.StopAllUsers()
 	}
-	ctx := r.context(context.Background())
-	for _, f := range r.testStopHandlers {
+	ctx := l.context(context.Background())
+	for _, f := range l.testStopHandlers {
 		f(ctx)
 	}
 }
 
-func (r *Runner) Spawn(user string, count int) error {
-	if spawner, ok := r.userSpawners[user]; ok {
+func (l *LoadRunner) Spawn(user string, count int) error {
+	if spawner, ok := l.userSpawners[user]; ok {
 		spawner.Cap(count)
 		return nil
 	}
 	return fmt.Errorf("unknown user spawn: %v, %v", user, count)
 }
 
-func (r *Runner) StopUsers() {
-	for _, spawner := range r.userSpawners {
+func (l *LoadRunner) StopUsers() {
+	for _, spawner := range l.userSpawners {
 		spawner.Cap(0)
 		spawner.StopAllUsers()
 	}
 }
 
-func (r *Runner) Users() map[string]int64 {
-	ret := make(map[string]int64, len(r.userSpawners))
-	for name, spawner := range r.userSpawners {
+func (l *LoadRunner) Users() map[string]int64 {
+	ret := make(map[string]int64, len(l.userSpawners))
+	for name, spawner := range l.userSpawners {
 		ret[name] = spawner.Count()
 	}
 	return ret
 }
 
-func (r *Runner) Report(requestType, name string, opts ...StatisticsOption) {
-	r.statistics.Add(time.Now(), requestType, name, opts...)
+func (l *LoadRunner) Report(requestType, name string, opts ...StatisticsOption) {
+	l.statistics.Add(time.Now(), requestType, name, opts...)
 }
 
-func (r *Runner) ReportException(err error) {
-	if r.ExceptionReporter != nil {
-		r.ExceptionReporter(err)
+func (l *LoadRunner) ReportException(err error) {
+	if l.ReportExceptionFunc != nil {
+		l.ReportExceptionFunc(err)
 	}
 }
 
-func (r *Runner) FlushStats() (StatisticsEntries, *StatisticsEntry, StatisticsErrors) {
-	return r.statistics.Move()
+func (l *LoadRunner) FlushStats() (StatisticsEntries, *StatisticsEntry, StatisticsErrors) {
+	return l.statistics.Move()
 }
 
-func (r *Runner) context(ctx context.Context) context.Context {
-	r.parsedOptionsMutex.RLock()
-	parsedOptions := r.parsedOptions
-	r.parsedOptionsMutex.RUnlock()
+func (l *LoadRunner) context(ctx context.Context) context.Context {
+	l.parsedOptionsMutex.RLock()
+	parsedOptions := l.parsedOptions
+	l.parsedOptionsMutex.RUnlock()
 
 	host := ""
-	if h := r.host.Load(); r != nil {
+	if h := l.host.Load(); l != nil {
 		if s, ok := h.(string); ok {
 			host = s
 		}
@@ -158,6 +185,8 @@ func (r *Runner) context(ctx context.Context) context.Context {
 
 	return ctx
 }
+
+type hostKey struct{}
 
 func withHost(ctx context.Context, host string) context.Context {
 	return context.WithValue(ctx, hostKey{}, host)

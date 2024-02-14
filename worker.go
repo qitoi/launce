@@ -80,16 +80,15 @@ type Worker struct {
 	StatsReportInterval    time.Duration
 	MasterHeartbeatTimeout time.Duration
 
-	runner          *Runner
-	cancel          atomic.Value
-	index           int64
-	state           WorkerState
-	transport       Transport
-	spawnCh         chan map[string]int64
-	ackCh           chan struct{}
-	heartbeatCh     chan struct{}
-	messageHandlers map[string][]MessageHandler
-	procInfo        *ProcessInfo
+	runner      *LoadRunner
+	cancel      atomic.Value
+	index       int64
+	state       WorkerState
+	transport   Transport
+	spawnCh     chan map[string]int64
+	ackCh       chan struct{}
+	heartbeatCh chan struct{}
+	procInfo    *ProcessInfo
 
 	lastReceivedSpawnTimestamp atomic.Uint64
 }
@@ -99,7 +98,7 @@ func NewWorker(transport Transport) (*Worker, error) {
 	if err != nil {
 		return nil, err
 	}
-	runner, err := NewRunner()
+	runner, err := NewLoadRunner()
 	if err != nil {
 		return nil, err
 	}
@@ -115,18 +114,18 @@ func NewWorker(transport Transport) (*Worker, error) {
 		StatsReportInterval:    defaultStatsReportInterval,
 		MasterHeartbeatTimeout: defaultMasterHeartbeatTimeout,
 
-		runner:          runner,
-		index:           -1,
-		state:           WorkerStateInit,
-		transport:       transport,
-		spawnCh:         make(chan map[string]int64),
-		ackCh:           make(chan struct{}, 1),
-		heartbeatCh:     make(chan struct{}),
-		messageHandlers: make(map[string][]MessageHandler),
-		procInfo:        procInfo,
+		runner:      runner,
+		index:       -1,
+		state:       WorkerStateInit,
+		transport:   transport,
+		spawnCh:     make(chan map[string]int64),
+		ackCh:       make(chan struct{}, 1),
+		heartbeatCh: make(chan struct{}),
+		procInfo:    procInfo,
 	}
 
-	worker.runner.ExceptionReporter = worker.reportException
+	worker.runner.SendMessageFunc = worker.SendMessage
+	worker.runner.ReportExceptionFunc = worker.reportException
 
 	return worker, nil
 }
@@ -165,7 +164,7 @@ func (w *Worker) Join() error {
 	procWg.Wait()
 
 	// ワーカーの終了時はマスターに quit メッセージを送信する
-	if err := w.send(MessageQuit, nil); err != nil {
+	if err := w.SendMessage(MessageQuit, nil); err != nil {
 		_ = w.close()
 		return err
 	}
@@ -219,7 +218,7 @@ clear:
 		}
 	}
 
-	if err := w.send(MessageClientReady, w.Version); err != nil {
+	if err := w.SendMessage(MessageClientReady, w.Version); err != nil {
 		return err
 	}
 
@@ -305,9 +304,9 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 			case MessageStop:
 				w.runner.SetParsedOptions(nil)
 				w.runner.Stop()
-				_ = w.send(MessageClientStopped, nil)
+				_ = w.SendMessage(MessageClientStopped, nil)
 				atomic.StoreInt64(&w.state, WorkerStateInit)
-				_ = w.send(MessageClientReady, w.Version)
+				_ = w.SendMessage(MessageClientReady, w.Version)
 				break
 
 			case MessageReconnect:
@@ -328,11 +327,7 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 				break
 
 			default:
-				if handlers, ok := w.messageHandlers[msg.Type]; ok {
-					for _, handler := range handlers {
-						handler(msg)
-					}
-				}
+				w.runner.HandleMessage(msg)
 				break
 			}
 		}
@@ -344,7 +339,7 @@ func (w *Worker) RegisterUser(name string, f func() User) {
 }
 
 func (w *Worker) RegisterMessage(typ string, handler MessageHandler) {
-	w.messageHandlers[typ] = append(w.messageHandlers[typ], handler)
+	w.runner.RegisterMessage(typ, handler)
 }
 
 func (w *Worker) OnTestStart(f func(ctx context.Context)) {
@@ -363,6 +358,19 @@ func (w *Worker) State() WorkerState {
 	return atomic.LoadInt64(&w.state)
 }
 
+func (w *Worker) SendMessage(typ string, data any) error {
+	msg := Message{
+		Type:   typ,
+		Data:   data,
+		NodeID: w.ClientID,
+	}
+	b, err := encodeMessage(msg)
+	if err != nil {
+		return err
+	}
+	return w.transport.Send(b)
+}
+
 func (w *Worker) reportException(err error) {
 	trace := ""
 	var e Error
@@ -371,7 +379,7 @@ func (w *Worker) reportException(err error) {
 	} else {
 		trace = ""
 	}
-	_ = w.send(MessageException, ExceptionPayload{
+	_ = w.SendMessage(MessageException, ExceptionPayload{
 		Msg:       err.Error(),
 		Traceback: trace,
 	})
@@ -387,7 +395,7 @@ func (w *Worker) startSpawnProcess(ctx context.Context, wg *sync.WaitGroup) {
 			select {
 			case spawnCount := <-w.spawnCh:
 				atomic.StoreInt64(&w.state, WorkerStateSpawning)
-				_ = w.send(MessageSpawning, nil)
+				_ = w.SendMessage(MessageSpawning, nil)
 
 				users := w.runner.Users()
 				var total int64
@@ -406,7 +414,7 @@ func (w *Worker) startSpawnProcess(ctx context.Context, wg *sync.WaitGroup) {
 					}
 				}
 
-				_ = w.send(MessageSpawningComplete, payload)
+				_ = w.SendMessage(MessageSpawningComplete, payload)
 
 				atomic.StoreInt64(&w.state, WorkerStateRunning)
 
@@ -441,7 +449,7 @@ func (w *Worker) startHeartbeatProcess(ctx context.Context, wg *sync.WaitGroup, 
 					CurrentCPUUsage:    w.procInfo.CPUUsage(),
 					CurrentMemoryUsage: w.procInfo.MemoryUsage(),
 				}
-				_ = w.send(MessageHeartbeat, msg)
+				_ = w.SendMessage(MessageHeartbeat, msg)
 				break
 
 			case <-ctx.Done():
@@ -512,7 +520,7 @@ func (w *Worker) sendStats() error {
 	for _, count := range payload.UserClassesCount {
 		payload.UserCount += count
 	}
-	return w.send(MessageStats, payload)
+	return w.SendMessage(MessageStats, payload)
 }
 
 func (w *Worker) startMetricsMonitorProcess(ctx context.Context, wg *sync.WaitGroup, interval time.Duration) {
@@ -549,19 +557,6 @@ func (w *Worker) recv() (ReceivedMessage, error) {
 		return ReceivedMessage{}, err
 	}
 	return decodeMessage(b)
-}
-
-func (w *Worker) send(typ string, data any) error {
-	msg := Message{
-		Type:   typ,
-		Data:   data,
-		NodeID: w.ClientID,
-	}
-	b, err := encodeMessage(msg)
-	if err != nil {
-		return err
-	}
-	return w.transport.Send(b)
 }
 
 func convertStatisticsPayload(entries StatisticsEntries, total *StatisticsEntry, errors StatisticsErrors) *StatsPayload {

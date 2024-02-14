@@ -29,7 +29,7 @@ type User struct {
 	taskset.User
 }
 
-func (u *User) Init(r launce.Reporter, waitTime launce.WaitTimeFunc) {
+func (u *User) Init(r launce.Runner, waitTime launce.WaitTimeFunc) {
 	u.User.Init(r, waitTime)
 	u.SetTaskSet(taskset.NewRandom(
 		taskset.Weight(taskset.TaskFunc(foo), 1),
