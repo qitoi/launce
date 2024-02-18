@@ -57,7 +57,7 @@ func NewLoadRunner() (*LoadRunner, error) {
 		SpawnMode: SpawnOnce,
 
 		userSpawners: map[string]*Spawner{},
-		statistics:   newStatistics(),
+		statistics:   NewStatistics(),
 
 		messageHandlers: map[string][]MessageHandler{},
 	}, nil

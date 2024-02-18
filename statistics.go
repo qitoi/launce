@@ -36,7 +36,7 @@ type Statistics struct {
 	Errors  StatisticsErrors
 }
 
-func newStatistics() *Statistics {
+func NewStatistics() *Statistics {
 	return &Statistics{
 		Entries: StatisticsEntries{},
 		Total:   newStatisticsEntry(),
@@ -93,22 +93,22 @@ type StatisticsEntryKey struct {
 }
 
 type StatisticsEntry struct {
-	startTime time.Time
+	StartTime time.Time
 
-	numRequests          int64
-	numNoneRequests      int64
-	numRequestsPerSec    map[int64]int64
-	numFailures          int64
-	numFailuresPerSec    map[int64]int64
-	lastRequestTimestamp time.Time
+	NumRequests          int64
+	NumNoneRequests      int64
+	NumRequestsPerSec    map[int64]int64
+	NumFailures          int64
+	NumFailuresPerSec    map[int64]int64
+	LastRequestTimestamp time.Time
 
-	totalResponseTime time.Duration
-	minResponseTime   time.Duration
-	maxResponseTime   time.Duration
+	TotalResponseTime time.Duration
+	MinResponseTime   time.Duration
+	MaxResponseTime   time.Duration
 
-	totalContentLength int64
+	TotalContentLength int64
 
-	responseTimes map[int64]int64
+	ResponseTimes map[int64]int64
 }
 
 type statisticsOption struct {
@@ -140,56 +140,56 @@ func WithError(err error) StatisticsOption {
 func (s *StatisticsEntry) Add(now time.Time, opt statisticsOption) {
 	t := now.Unix()
 
-	if s.startTime == unixTimeZero || s.startTime.After(now) {
-		s.startTime = now
+	if s.StartTime == unixTimeZero || s.StartTime.After(now) {
+		s.StartTime = now
 	}
-	if s.lastRequestTimestamp.Before(now) {
-		s.lastRequestTimestamp = now
+	if s.LastRequestTimestamp.Before(now) {
+		s.LastRequestTimestamp = now
 	}
 
-	s.numRequests += 1
+	s.NumRequests += 1
 
 	if opt.ResponseTime == nil {
-		s.numNoneRequests += 1
+		s.NumNoneRequests += 1
 	} else {
 		respTime := *opt.ResponseTime
-		s.totalResponseTime += respTime
-		s.minResponseTime = min(s.minResponseTime, respTime)
-		s.maxResponseTime = max(s.maxResponseTime, respTime)
+		s.TotalResponseTime += respTime
+		s.MinResponseTime = min(s.MinResponseTime, respTime)
+		s.MaxResponseTime = max(s.MaxResponseTime, respTime)
 		rounded := roundResponseTime(respTime)
-		if _, ok := s.responseTimes[rounded]; !ok {
-			s.responseTimes[rounded] = 1
+		if _, ok := s.ResponseTimes[rounded]; !ok {
+			s.ResponseTimes[rounded] = 1
 		} else {
-			s.responseTimes[rounded] += 1
+			s.ResponseTimes[rounded] += 1
 		}
 	}
 
-	s.totalContentLength += opt.ResponseLength
+	s.TotalContentLength += opt.ResponseLength
 
-	if _, ok := s.numRequestsPerSec[t]; !ok {
-		s.numRequestsPerSec[t] = 0
+	if _, ok := s.NumRequestsPerSec[t]; !ok {
+		s.NumRequestsPerSec[t] = 0
 	}
-	s.numRequestsPerSec[t] += 1
+	s.NumRequestsPerSec[t] += 1
 
 	if opt.Error != nil {
-		s.numFailures += 1
-		s.numFailuresPerSec[t] += 1
+		s.NumFailures += 1
+		s.NumFailuresPerSec[t] += 1
 	}
 }
 
 func newStatisticsEntry() *StatisticsEntry {
 	return &StatisticsEntry{
-		startTime:            unixTimeZero,
-		numRequests:          0,
-		numNoneRequests:      0,
-		numRequestsPerSec:    map[int64]int64{},
-		numFailures:          0,
-		numFailuresPerSec:    map[int64]int64{},
-		lastRequestTimestamp: unixTimeZero,
-		totalResponseTime:    0,
-		minResponseTime:      0,
-		maxResponseTime:      0,
-		responseTimes:        map[int64]int64{},
+		StartTime:            unixTimeZero,
+		NumRequests:          0,
+		NumNoneRequests:      0,
+		NumRequestsPerSec:    map[int64]int64{},
+		NumFailures:          0,
+		NumFailuresPerSec:    map[int64]int64{},
+		LastRequestTimestamp: unixTimeZero,
+		TotalResponseTime:    0,
+		MinResponseTime:      0,
+		MaxResponseTime:      0,
+		ResponseTimes:        map[int64]int64{},
 	}
 }
 

@@ -584,18 +584,18 @@ func convertStatisticsEntry(name, method string, entry *StatisticsEntry) *StatsP
 	return &StatsPayloadEntry{
 		Name:                 name,
 		Method:               method,
-		LastRequestTimestamp: float64(entry.lastRequestTimestamp.UnixNano()) / 1e9, // [s]
-		StartTime:            float64(entry.startTime.UnixNano()) / 1e9,            // [s]
-		NumRequests:          entry.numRequests,
-		NumNoneRequests:      entry.numNoneRequests,
-		NumFailures:          entry.numFailures,
-		TotalResponseTime:    float64(entry.totalResponseTime.Nanoseconds()) / 1e6, // [ms]
-		MaxResponseTime:      float64(entry.maxResponseTime.Nanoseconds()) / 1e6,   // [ms]
-		MinResponseTime:      float64(entry.minResponseTime.Nanoseconds()) / 1e6,   // [ms]
-		TotalContentLength:   entry.totalContentLength,
-		ResponseTimes:        entry.responseTimes,
-		NumReqsPerSec:        entry.numRequestsPerSec,
-		NumFailPerSec:        entry.numFailuresPerSec,
+		LastRequestTimestamp: float64(entry.LastRequestTimestamp.UnixNano()) / 1e9, // [s]
+		StartTime:            float64(entry.StartTime.UnixNano()) / 1e9,            // [s]
+		NumRequests:          entry.NumRequests,
+		NumNoneRequests:      entry.NumNoneRequests,
+		NumFailures:          entry.NumFailures,
+		TotalResponseTime:    float64(entry.TotalResponseTime.Nanoseconds()) / 1e6, // [ms]
+		MaxResponseTime:      float64(entry.MaxResponseTime.Nanoseconds()) / 1e6,   // [ms]
+		MinResponseTime:      float64(entry.MinResponseTime.Nanoseconds()) / 1e6,   // [ms]
+		TotalContentLength:   entry.TotalContentLength,
+		ResponseTimes:        entry.ResponseTimes,
+		NumReqsPerSec:        entry.NumRequestsPerSec,
+		NumFailPerSec:        entry.NumFailuresPerSec,
 	}
 }
 
