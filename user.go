@@ -85,33 +85,24 @@ func (b *BaseUser) OnStop(ctx context.Context) error {
 
 func ProcessUser(ctx context.Context, user User) error {
 	if err := user.OnStart(ctx); err != nil {
-		if errors.Is(err, StopUser) {
-			return nil
+		if !errors.Is(err, context.Canceled) && !errors.Is(err, StopUser) {
+			// unexpected error
+			return err
 		}
-		return err
+		// locust/user stopped
+		return user.OnStop(context.WithoutCancel(ctx))
 	}
 
 	for {
 		if err := user.Process(ctx); err != nil {
-			if errors.Is(err, context.Canceled) {
-				// locust stopped
-				break
-			} else if errors.Is(err, StopUser) {
-				// user stopped
-				break
-			} else {
+			if !errors.Is(err, context.Canceled) && !errors.Is(err, StopUser) {
 				// unexpected error
 				return err
 			}
+			// locust/user stopped
+			break
 		}
 	}
 
-	if err := user.OnStop(ctx); err != nil {
-		if errors.Is(err, StopUser) {
-			return nil
-		}
-		return err
-	}
-
-	return nil
+	return user.OnStop(context.WithoutCancel(ctx))
 }
