@@ -124,6 +124,7 @@ func (l *LoadRunner) OnTestStop(f func(ctx context.Context)) {
 }
 
 func (l *LoadRunner) Start() {
+	l.FlushStats()
 	ctx := context.Background()
 	for _, f := range l.testStartHandlers {
 		f(ctx)

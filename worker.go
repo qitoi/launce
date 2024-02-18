@@ -292,7 +292,6 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 
 				state := atomic.LoadInt64(&w.state)
 				if state != WorkerStateRunning && state != WorkerStateSpawning {
-					w.runner.FlushStats()
 					w.runner.Start()
 				}
 
