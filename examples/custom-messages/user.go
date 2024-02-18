@@ -31,7 +31,7 @@ type User struct {
 func (u *User) Init(r launce.Runner, waitTime launce.WaitTimeFunc) {
 	u.User.Init(r, waitTime)
 	u.SetTaskSet(taskset.NewSequential(
-		taskset.TaskFunc(func(ctx context.Context, user launce.User) error {
+		taskset.TaskFunc(func(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
 			return nil
 		}),
 	))

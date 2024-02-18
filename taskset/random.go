@@ -69,7 +69,7 @@ func (r *Random) WaitTime() launce.WaitTimeFunc {
 	return launce.Constant(0)
 }
 
-func (r *Random) OnStart(ctx context.Context) error {
+func (r *Random) OnStart(ctx context.Context, s Scheduler) error {
 	return nil
 }
 
@@ -81,6 +81,6 @@ func (r *Random) ApplyFilter(opts ...FilterOption) {
 	r.filtered = FilterTasks(r.tasks, opts...)
 }
 
-func (r *Random) Run(ctx context.Context, user launce.User) error {
-	return Run(ctx, r, user)
+func (r *Random) Run(ctx context.Context, u launce.User, s Scheduler) error {
+	return Run(ctx, r, u)
 }

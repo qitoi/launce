@@ -27,11 +27,15 @@ var (
 )
 
 type Task interface {
-	Run(ctx context.Context, user launce.User) error
+	Run(ctx context.Context, u launce.User, s Scheduler) error
 }
 
-type TaskFunc func(ctx context.Context, user launce.User) error
+type TaskFunc func(ctx context.Context, u launce.User, s Scheduler) error
 
-func (t TaskFunc) Run(ctx context.Context, user launce.User) error {
-	return t(ctx, user)
+func (t TaskFunc) Run(ctx context.Context, u launce.User, s Scheduler) error {
+	return t(ctx, u, s)
+}
+
+type Scheduler interface {
+	Schedule(task Task, first bool)
 }

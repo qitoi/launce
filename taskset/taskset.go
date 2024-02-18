@@ -36,17 +36,44 @@ type TaskSet interface {
 	Len() int
 	Next() Task
 	WaitTime() launce.WaitTimeFunc
-	OnStart(ctx context.Context) error
+	OnStart(ctx context.Context, s Scheduler) error
 	OnStop(ctx context.Context) error
 
 	ApplyFilter(opts ...FilterOption)
 }
 
+type taskQueue struct {
+	tasks []Task
+}
+
+func (tq *taskQueue) Empty() bool {
+	return len(tq.tasks) == 0
+}
+
+func (tq *taskQueue) Next() Task {
+	t := tq.tasks[0]
+	if len(tq.tasks) == 1 {
+		tq.tasks = tq.tasks[:0]
+	} else {
+		tq.tasks = tq.tasks[1:]
+	}
+	return t
+}
+
+func (tq *taskQueue) Schedule(t Task, first bool) {
+	if first {
+		tq.tasks = append([]Task{t}, tq.tasks...)
+	} else {
+		tq.tasks = append(tq.tasks, t)
+	}
+}
+
 func Run(ctx context.Context, t TaskSet, user launce.User) error {
+	var tq taskQueue
 	waiter := launce.Waiter{}
 	waiter.Init(t.WaitTime())
 
-	if err := t.OnStart(ctx); err != nil {
+	if err := t.OnStart(ctx, &tq); err != nil {
 		if errors.Is(err, InterruptTaskSet) {
 			return RescheduleTask
 		} else if errors.Is(err, InterruptTaskSetImmediately) {
@@ -56,8 +83,12 @@ func Run(ctx context.Context, t TaskSet, user launce.User) error {
 	}
 
 	for {
-		task := t.Next()
-		err := task.Run(ctx, user)
+		if tq.Empty() {
+			tq.Schedule(t.Next(), false)
+		}
+
+		task := tq.Next()
+		err := task.Run(ctx, user, &tq)
 
 		switch {
 		case err == nil || errors.Is(err, RescheduleTask):

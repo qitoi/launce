@@ -49,7 +49,7 @@ func TestRandom_Run(t *testing.T) {
 				tasks = append(
 					tasks,
 					taskset.Weight(
-						taskset.TaskFunc(func(ctx context.Context, user launce.User) error {
+						taskset.TaskFunc(func(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
 							result = append(result, i)
 							if len(result) == testcase.Num {
 								return launce.StopUser
@@ -62,7 +62,7 @@ func TestRandom_Run(t *testing.T) {
 			}
 
 			random := taskset.NewRandom(tasks...)
-			err := random.Run(context.Background(), nil)
+			err := taskset.Run(context.Background(), random, nil)
 
 			if !errors.Is(err, launce.StopUser) {
 				t.Fatalf("unexpected error. got:%v, want:%v", err, launce.StopUser)
@@ -123,7 +123,7 @@ func TestRandom_ApplyFilter(t *testing.T) {
 				tasks = append(tasks,
 					taskset.Weight(
 						taskset.Tag(
-							taskset.TaskFunc(func(ctx context.Context, user launce.User) error {
+							taskset.TaskFunc(func(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
 								result = append(result, no)
 								return taskset.InterruptTaskSet
 							}),
@@ -144,7 +144,10 @@ func TestRandom_ApplyFilter(t *testing.T) {
 
 			random := taskset.NewRandom(tasks...)
 			random.ApplyFilter(opts...)
-			if err := random.Run(context.Background(), nil); !errors.Is(err, taskset.RescheduleTask) {
+
+			err := taskset.Run(context.Background(), random, nil)
+
+			if !errors.Is(err, taskset.RescheduleTask) {
 				t.Fatal(err)
 			}
 

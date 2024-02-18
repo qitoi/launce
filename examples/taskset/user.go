@@ -46,8 +46,8 @@ func (u *User) WaitTime() launce.WaitTimeFunc {
 	return launce.Between(100*time.Millisecond, 200*time.Millisecond)
 }
 
-func foo(ctx context.Context, user launce.User) error {
-	user.Runner().Report(
+func foo(_ context.Context, u launce.User, _ taskset.Scheduler) error {
+	u.Runner().Report(
 		http.MethodGet,
 		"/foo",
 		launce.WithResponseTime(100*time.Millisecond),
@@ -55,7 +55,7 @@ func foo(ctx context.Context, user launce.User) error {
 	return nil
 }
 
-func (u *User) bar(ctx context.Context, user launce.User) error {
+func (u *User) bar(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
 	u.Runner().Report(
 		http.MethodGet,
 		"/bar",
@@ -64,7 +64,7 @@ func (u *User) bar(ctx context.Context, user launce.User) error {
 	return nil
 }
 
-func (u *User) seq1(ctx context.Context, user launce.User) error {
+func (u *User) seq1(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
 	u.Runner().Report(
 		http.MethodGet,
 		"/seq/1",
@@ -73,7 +73,7 @@ func (u *User) seq1(ctx context.Context, user launce.User) error {
 	return nil
 }
 
-func (u *User) seq2(ctx context.Context, user launce.User) error {
+func (u *User) seq2(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
 	u.Runner().Report(
 		http.MethodGet,
 		"/seq/2",
@@ -84,8 +84,8 @@ func (u *User) seq2(ctx context.Context, user launce.User) error {
 
 type seq3 struct{}
 
-func (s *seq3) Run(ctx context.Context, user launce.User) error {
-	user.Runner().Report(
+func (s *seq3) Run(_ context.Context, u launce.User, _ taskset.Scheduler) error {
+	u.Runner().Report(
 		http.MethodGet,
 		"/seq/3",
 		launce.WithResponseTime(100*time.Millisecond),

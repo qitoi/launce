@@ -57,7 +57,7 @@ func (s *Sequential) WaitTime() launce.WaitTimeFunc {
 	return launce.Constant(0)
 }
 
-func (s *Sequential) OnStart(ctx context.Context) error {
+func (s *Sequential) OnStart(ctx context.Context, _ Scheduler) error {
 	return nil
 }
 
@@ -69,6 +69,6 @@ func (s *Sequential) ApplyFilter(opts ...FilterOption) {
 	s.filtered = FilterTasks(s.tasks, opts...)
 }
 
-func (s *Sequential) Run(ctx context.Context, user launce.User) error {
-	return Run(ctx, s, user)
+func (s *Sequential) Run(ctx context.Context, u launce.User, _ Scheduler) error {
+	return Run(ctx, s, u)
 }

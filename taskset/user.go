@@ -57,7 +57,7 @@ func (u *User) SetTaskSet(taskset TaskSet) {
 }
 
 func (u *User) Process(ctx context.Context) error {
-	err := u.taskset.Run(ctx, u)
+	err := Run(ctx, u.taskset, u)
 	if err == nil || errors.Is(err, RescheduleTask) || errors.Is(err, RescheduleTaskImmediately) {
 		return nil
 	} else {

@@ -90,14 +90,14 @@ func TestSequential_Run(t *testing.T) {
 
 			for i, task := range testcase.Tasks {
 				i, task := i, task
-				tasks = append(tasks, taskset.TaskFunc(func(ctx context.Context, user launce.User) error {
+				tasks = append(tasks, taskset.TaskFunc(func(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
 					result = append(result, i)
 					return task(len(result))
 				}))
 			}
 
 			seq := taskset.NewSequential(tasks...)
-			err := seq.Run(context.Background(), nil)
+			err := taskset.Run(context.Background(), seq, nil)
 
 			if !errors.Is(err, launce.StopUser) {
 				t.Fatalf("unexpected error. got:%v, want:%v", err, launce.StopUser)
@@ -148,7 +148,7 @@ func TestSequential_ApplyFilter(t *testing.T) {
 			var tasks []taskset.Task
 			for i := 1; i <= 100; i++ {
 				no := i
-				tasks = append(tasks, taskset.Tag(taskset.TaskFunc(func(ctx context.Context, user launce.User) error {
+				tasks = append(tasks, taskset.Tag(taskset.TaskFunc(func(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
 					result = append(result, no)
 					return taskset.InterruptTaskSet
 				}), fmt.Sprintf("tag%d", no)))
@@ -164,7 +164,10 @@ func TestSequential_ApplyFilter(t *testing.T) {
 
 			seq := taskset.NewSequential(tasks...)
 			seq.ApplyFilter(opts...)
-			if err := seq.Run(context.Background(), nil); !errors.Is(err, taskset.RescheduleTask) {
+
+			err := taskset.Run(context.Background(), seq, nil)
+
+			if !errors.Is(err, taskset.RescheduleTask) {
 				t.Fatal(err)
 			}
 

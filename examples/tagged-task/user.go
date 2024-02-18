@@ -57,7 +57,7 @@ func (u *User) WaitTime() launce.WaitTimeFunc {
 	return launce.Between(100*time.Millisecond, 200*time.Millisecond)
 }
 
-func (u *User) task1(ctx context.Context, user launce.User) error {
+func (u *User) task1(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
 	u.Runner().Report(
 		http.MethodGet,
 		"/task/1",
@@ -66,7 +66,7 @@ func (u *User) task1(ctx context.Context, user launce.User) error {
 	return nil
 }
 
-func (u *User) task2(ctx context.Context, user launce.User) error {
+func (u *User) task2(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
 	u.Runner().Report(
 		http.MethodGet,
 		"/task/2",
@@ -75,7 +75,7 @@ func (u *User) task2(ctx context.Context, user launce.User) error {
 	return nil
 }
 
-func (u *User) task3(ctx context.Context, user launce.User) error {
+func (u *User) task3(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
 	u.Runner().Report(
 		http.MethodGet,
 		"/task/3",
@@ -84,7 +84,7 @@ func (u *User) task3(ctx context.Context, user launce.User) error {
 	return nil
 }
 
-func (u *User) task4(ctx context.Context, user launce.User) error {
+func (u *User) task4(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
 	u.Runner().Report(
 		http.MethodGet,
 		"/task/4",
