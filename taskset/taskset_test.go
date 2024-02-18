@@ -242,7 +242,6 @@ func TestFilterTasks(t *testing.T) {
 			Expected:    []int{21},
 		},
 	}
-	testcases = nil
 
 	interruptTaskSetTask := taskset.Tag(taskset.TaskFunc(func(ctx context.Context, user launce.User) error {
 		return taskset.InterruptTaskSet
