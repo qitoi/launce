@@ -581,6 +581,11 @@ func convertStatisticsPayload(entries StatisticsEntries, total *StatisticsEntry,
 }
 
 func convertStatisticsEntry(name, method string, entry *StatisticsEntry) *StatsPayloadEntry {
+	var minResponseTime *float64
+	if entry.MinResponseTime != nil {
+		minResponseTime = new(float64)
+		*minResponseTime = float64(entry.MinResponseTime.Nanoseconds()) / 1e6 // [ms]
+	}
 	return &StatsPayloadEntry{
 		Name:                 name,
 		Method:               method,
@@ -591,7 +596,7 @@ func convertStatisticsEntry(name, method string, entry *StatisticsEntry) *StatsP
 		NumFailures:          entry.NumFailures,
 		TotalResponseTime:    float64(entry.TotalResponseTime.Nanoseconds()) / 1e6, // [ms]
 		MaxResponseTime:      float64(entry.MaxResponseTime.Nanoseconds()) / 1e6,   // [ms]
-		MinResponseTime:      float64(entry.MinResponseTime.Nanoseconds()) / 1e6,   // [ms]
+		MinResponseTime:      minResponseTime,
 		TotalContentLength:   entry.TotalContentLength,
 		ResponseTimes:        entry.ResponseTimes,
 		NumReqsPerSec:        entry.NumRequestsPerSec,

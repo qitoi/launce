@@ -103,7 +103,7 @@ type StatisticsEntry struct {
 	LastRequestTimestamp time.Time
 
 	TotalResponseTime time.Duration
-	MinResponseTime   time.Duration
+	MinResponseTime   *time.Duration
 	MaxResponseTime   time.Duration
 
 	TotalContentLength int64
@@ -154,7 +154,11 @@ func (s *StatisticsEntry) Add(now time.Time, opt statisticsOption) {
 	} else {
 		respTime := *opt.ResponseTime
 		s.TotalResponseTime += respTime
-		s.MinResponseTime = min(s.MinResponseTime, respTime)
+		if s.MinResponseTime == nil {
+			s.MinResponseTime = &respTime
+		} else if *s.MinResponseTime > respTime {
+			*s.MinResponseTime = respTime
+		}
 		s.MaxResponseTime = max(s.MaxResponseTime, respTime)
 		rounded := roundResponseTime(respTime)
 		if _, ok := s.ResponseTimes[rounded]; !ok {
@@ -187,7 +191,7 @@ func newStatisticsEntry() *StatisticsEntry {
 		NumFailuresPerSec:    map[int64]int64{},
 		LastRequestTimestamp: unixTimeZero,
 		TotalResponseTime:    0,
-		MinResponseTime:      0,
+		MinResponseTime:      nil,
 		MaxResponseTime:      0,
 		ResponseTimes:        map[int64]int64{},
 	}

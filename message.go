@@ -115,7 +115,7 @@ type StatsPayloadEntry struct {
 	NumFailures          int64           `msgpack:"num_failures"`
 	TotalResponseTime    float64         `msgpack:"total_response_time"`
 	MaxResponseTime      float64         `msgpack:"max_response_time"`
-	MinResponseTime      float64         `msgpack:"min_response_time"`
+	MinResponseTime      *float64        `msgpack:"min_response_time"`
 	TotalContentLength   int64           `msgpack:"total_content_length"`
 	ResponseTimes        map[int64]int64 `msgpack:"response_times"`
 	NumReqsPerSec        map[int64]int64 `msgpack:"num_reqs_per_sec"`
