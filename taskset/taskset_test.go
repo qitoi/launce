@@ -26,39 +26,72 @@ import (
 	"github.com/qitoi/launce/taskset"
 )
 
+type testUser struct {
+	launce.BaseUser
+	Result []int
+}
+
+func (t *testUser) Process(ctx context.Context) error {
+	return nil
+}
+
+func (t *testUser) Add(n int) {
+	t.Result = append(t.Result, n)
+}
+
+func buildNestedTaskSet(tasks [][]taskset.Task) taskset.TaskSet {
+	var subTaskset []taskset.Task
+	for _, ts := range tasks {
+		subTaskset = append(subTaskset, taskset.NewSequential(ts...))
+	}
+	return taskset.NewSequential(subTaskset...)
+}
+
+func runTaskSet(task taskset.TaskSet) ([]int, error) {
+	u := &testUser{}
+	err := taskset.Run(context.Background(), task, u)
+	return u.Result, err
+}
+
 func TestTaskSet_NestTaskSet(t *testing.T) {
 	testcases := []struct {
 		Name          string
-		Tasks         [][]func(n int) error
+		Tasks         [][]taskset.Task
 		Expected      []int
 		ExpectedError error
 	}{
 		{
 			Name: "Interrupt TaskSet",
-			Tasks: [][]func(n int) error{
+			Tasks: [][]taskset.Task{
 				{
-					func(n int) error {
+					taskset.TaskFunc(func(ctx context.Context, u launce.User) error {
+						u.(*testUser).Add(11)
 						return nil
-					},
-					func(n int) error {
+					}),
+					taskset.TaskFunc(func(ctx context.Context, u launce.User) error {
+						u.(*testUser).Add(12)
 						return taskset.InterruptTaskSet
-					},
+					}),
 				},
 				{
-					func(n int) error {
-						return taskset.RescheduleTask
-					},
-					func(n int) error {
+					taskset.TaskFunc(func(ctx context.Context, u launce.User) error {
+						u.(*testUser).Add(21)
+						return nil
+					}),
+					taskset.TaskFunc(func(ctx context.Context, u launce.User) error {
+						u.(*testUser).Add(22)
 						return taskset.InterruptTaskSetImmediately
-					},
+					}),
 				},
 				{
-					func(n int) error {
+					taskset.TaskFunc(func(ctx context.Context, u launce.User) error {
+						u.(*testUser).Add(31)
 						return taskset.RescheduleTaskImmediately
-					},
-					func(n int) error {
+					}),
+					taskset.TaskFunc(func(ctx context.Context, u launce.User) error {
+						u.(*testUser).Add(32)
 						return launce.StopUser
-					},
+					}),
 				},
 			},
 			Expected:      []int{11, 12, 21, 22, 31, 32},
@@ -66,30 +99,36 @@ func TestTaskSet_NestTaskSet(t *testing.T) {
 		},
 		{
 			Name: "Stop User",
-			Tasks: [][]func(n int) error{
+			Tasks: [][]taskset.Task{
 				{
-					func(n int) error {
+					taskset.TaskFunc(func(ctx context.Context, u launce.User) error {
+						u.(*testUser).Add(11)
 						return nil
-					},
-					func(n int) error {
+					}),
+					taskset.TaskFunc(func(ctx context.Context, u launce.User) error {
+						u.(*testUser).Add(12)
 						return taskset.InterruptTaskSet
-					},
+					}),
 				},
 				{
-					func(n int) error {
+					taskset.TaskFunc(func(ctx context.Context, u launce.User) error {
+						u.(*testUser).Add(21)
 						return launce.StopUser
-					},
-					func(n int) error {
+					}),
+					taskset.TaskFunc(func(ctx context.Context, u launce.User) error {
+						u.(*testUser).Add(22)
 						return taskset.InterruptTaskSet
-					},
+					}),
 				},
 				{
-					func(n int) error {
+					taskset.TaskFunc(func(ctx context.Context, u launce.User) error {
+						u.(*testUser).Add(31)
 						return nil
-					},
-					func(n int) error {
+					}),
+					taskset.TaskFunc(func(ctx context.Context, u launce.User) error {
+						u.(*testUser).Add(32)
 						return launce.StopUser
-					},
+					}),
 				},
 			},
 			Expected:      []int{11, 12, 21},
@@ -97,22 +136,25 @@ func TestTaskSet_NestTaskSet(t *testing.T) {
 		},
 		{
 			Name: "Loop Sub TaskSet",
-			Tasks: [][]func(n int) error{
+			Tasks: [][]taskset.Task{
 				{
-					func(n int) error {
+					taskset.TaskFunc(func(ctx context.Context, u launce.User) error {
+						u.(*testUser).Add(11)
 						return taskset.RescheduleTask
-					},
-					func(n int) error {
-						if n >= 4 {
+					}),
+					taskset.TaskFunc(func(ctx context.Context, u launce.User) error {
+						u.(*testUser).Add(12)
+						if len(u.(*testUser).Result) >= 4 {
 							return taskset.InterruptTaskSet
 						}
 						return nil
-					},
+					}),
 				},
 				{
-					func(n int) error {
+					taskset.TaskFunc(func(ctx context.Context, u launce.User) error {
+						u.(*testUser).Add(21)
 						return launce.StopUser
-					},
+					}),
 				},
 			},
 			Expected:      []int{11, 12, 11, 12, 21},
@@ -122,24 +164,8 @@ func TestTaskSet_NestTaskSet(t *testing.T) {
 
 	for _, testcase := range testcases {
 		t.Run(testcase.Name, func(t *testing.T) {
-			var tasksets []taskset.Task
-			var result []int
-			for tasksetIdx, tasksetTasks := range testcase.Tasks {
-				var tasks []taskset.Task
-				for taskIdx, task := range tasksetTasks {
-					id := (tasksetIdx+1)*10 + taskIdx + 1
-					task := task
-					tasks = append(tasks, taskset.TaskFunc(func(ctx context.Context, user launce.User) error {
-						result = append(result, id)
-						return task(len(result))
-					}))
-				}
-				seq := taskset.NewSequential(tasks...)
-				tasksets = append(tasksets, seq)
-			}
-
-			root := taskset.NewSequential(tasksets...)
-			err := root.Run(context.Background(), nil)
+			ts := buildNestedTaskSet(testcase.Tasks)
+			result, err := runTaskSet(ts)
 
 			if !errors.Is(err, testcase.ExpectedError) {
 				t.Fatalf("unexpected error. got:%v want:%v", err, testcase.ExpectedError)
@@ -243,50 +269,48 @@ func TestFilterTasks(t *testing.T) {
 		},
 	}
 
-	interruptTaskSetTask := taskset.Tag(taskset.TaskFunc(func(ctx context.Context, user launce.User) error {
+	interruptTaskSetTask := taskset.Tag(taskset.TaskFunc(func(_ context.Context, _ launce.User) error {
 		return taskset.InterruptTaskSet
 	}), "stop")
 
-	for _, testcase := range testcases {
-		var result []int
-
-		tasks := []taskset.Task{
-			taskset.Tag(taskset.TaskFunc(func(ctx context.Context, user launce.User) error {
-				result = append(result, 1)
+	tasks := []taskset.Task{
+		taskset.Tag(taskset.TaskFunc(func(_ context.Context, u launce.User) error {
+			u.(*testUser).Add(1)
+			return nil
+		}), "tag1"),
+		taskset.Tag(taskset.TaskFunc(func(_ context.Context, u launce.User) error {
+			u.(*testUser).Add(2)
+			return nil
+		}), "tag2", "tag3"),
+		taskset.NewSequential(
+			taskset.Tag(taskset.TaskFunc(func(_ context.Context, u launce.User) error {
+				u.(*testUser).Add(11)
 				return nil
-			}), "tag1"),
-			taskset.Tag(taskset.TaskFunc(func(ctx context.Context, user launce.User) error {
-				result = append(result, 2)
+			}), "tag1", "tag3"),
+			taskset.Tag(taskset.TaskFunc(func(_ context.Context, u launce.User) error {
+				u.(*testUser).Add(12)
 				return nil
-			}), "tag2", "tag3"),
+			}), "tag2"),
+			interruptTaskSetTask,
+		),
+		taskset.Tag(
 			taskset.NewSequential(
-				taskset.Tag(taskset.TaskFunc(func(ctx context.Context, user launce.User) error {
-					result = append(result, 11)
+				taskset.TaskFunc(func(_ context.Context, u launce.User) error {
+					u.(*testUser).Add(21)
 					return nil
-				}), "tag1", "tag3"),
-				taskset.Tag(taskset.TaskFunc(func(ctx context.Context, user launce.User) error {
-					result = append(result, 12)
+				}),
+				taskset.Tag(taskset.TaskFunc(func(_ context.Context, u launce.User) error {
+					u.(*testUser).Add(22)
 					return nil
-				}), "tag2"),
+				}), "tag3"),
 				interruptTaskSetTask,
 			),
-			taskset.Tag(
-				taskset.NewSequential(
-					taskset.TaskFunc(func(ctx context.Context, user launce.User) error {
-						result = append(result, 21)
-						return nil
-					}),
-					taskset.Tag(taskset.TaskFunc(func(ctx context.Context, user launce.User) error {
-						result = append(result, 22)
-						return nil
-					}), "tag3"),
-					interruptTaskSetTask,
-				),
-				"tag4",
-			),
-			interruptTaskSetTask,
-		}
+			"tag4",
+		),
+		interruptTaskSetTask,
+	}
 
+	for _, testcase := range testcases {
 		var opts []taskset.FilterOption
 		if testcase.Tags != nil {
 			opts = append(opts, taskset.IncludeTags(*testcase.Tags...))
@@ -296,9 +320,11 @@ func TestFilterTasks(t *testing.T) {
 		}
 
 		t.Run(testcase.Name, func(t *testing.T) {
-			root := taskset.NewSequential(taskset.FilterTasks(tasks, opts...)...)
+			ts := taskset.NewSequential(taskset.FilterTasks(tasks, opts...)...)
 
-			if err := root.Run(context.Background(), nil); !errors.Is(err, taskset.RescheduleTask) {
+			result, err := runTaskSet(ts)
+
+			if !errors.Is(err, taskset.RescheduleTask) {
 				t.Fatal(err)
 			}
 
@@ -308,51 +334,18 @@ func TestFilterTasks(t *testing.T) {
 		})
 	}
 
-	t.Run("exclude taskset all tasks", func(t *testing.T) {
-		var result []int
-		expected := []int{1}
-
-		tasks := []taskset.Task{
-			taskset.TaskFunc(func(ctx context.Context, user launce.User) error {
-				result = append(result, 1)
-				return nil
-			}),
-			taskset.NewSequential(
-				taskset.Tag(
-					taskset.TaskFunc(func(ctx context.Context, user launce.User) error {
-						result = append(result, 11)
-						return nil
-					}),
-					"exclude",
-				),
-			),
-			interruptTaskSetTask,
-		}
-
-		tasks = taskset.FilterTasks(tasks, taskset.ExcludeTags("exclude"))
-		root := taskset.NewSequential(tasks...)
-		if err := root.Run(context.Background(), nil); !errors.Is(err, taskset.RescheduleTask) {
-			t.Fatal(err)
-		}
-
-		if slices.Compare(result, expected) != 0 {
-			t.Fatalf("unexpected result. got:%v, want:%v", result, expected)
-		}
-	})
-
 	t.Run("include taskset, exclude taskset all tasks", func(t *testing.T) {
-		var result []int
 		expected := []int{1}
 
 		tasks := []taskset.Task{
-			taskset.Tag(taskset.TaskFunc(func(ctx context.Context, user launce.User) error {
-				result = append(result, 1)
+			taskset.Tag(taskset.TaskFunc(func(_ context.Context, u launce.User) error {
+				u.(*testUser).Add(1)
 				return nil
 			}), "include"),
 			taskset.Tag(
 				taskset.NewSequential(
-					taskset.Tag(taskset.TaskFunc(func(ctx context.Context, user launce.User) error {
-						result = append(result, 11)
+					taskset.Tag(taskset.TaskFunc(func(_ context.Context, u launce.User) error {
+						u.(*testUser).Add(11)
 						return nil
 					}), "exclude"),
 				),
@@ -362,8 +355,11 @@ func TestFilterTasks(t *testing.T) {
 		}
 
 		tasks = taskset.FilterTasks(tasks, taskset.IncludeTags("include"), taskset.ExcludeTags("exclude"))
-		root := taskset.NewSequential(tasks...)
-		if err := root.Run(context.Background(), nil); !errors.Is(err, taskset.RescheduleTask) {
+		ts := taskset.NewSequential(tasks...)
+
+		result, err := runTaskSet(ts)
+
+		if !errors.Is(err, taskset.RescheduleTask) {
 			t.Fatal(err)
 		}
 
@@ -371,4 +367,42 @@ func TestFilterTasks(t *testing.T) {
 			t.Fatalf("unexpected result. got:%v, want:%v", result, expected)
 		}
 	})
+}
+
+func TestFilterTasks_ExcludeAllSubTasks(t *testing.T) {
+	interruptTaskSetTask := taskset.Tag(taskset.TaskFunc(func(_ context.Context, _ launce.User) error {
+		return taskset.InterruptTaskSet
+	}), "stop")
+
+	expected := []int{1}
+
+	tasks := []taskset.Task{
+		taskset.TaskFunc(func(_ context.Context, u launce.User) error {
+			u.(*testUser).Add(1)
+			return nil
+		}),
+		taskset.NewSequential(
+			taskset.Tag(
+				taskset.TaskFunc(func(_ context.Context, u launce.User) error {
+					u.(*testUser).Add(11)
+					return nil
+				}),
+				"exclude",
+			),
+		),
+		interruptTaskSetTask,
+	}
+
+	tasks = taskset.FilterTasks(tasks, taskset.ExcludeTags("exclude"))
+	ts := taskset.NewSequential(tasks...)
+
+	result, err := runTaskSet(ts)
+
+	if !errors.Is(err, taskset.RescheduleTask) {
+		t.Fatal(err)
+	}
+
+	if slices.Compare(result, expected) != 0 {
+		t.Fatalf("unexpected result. got:%v, want:%v", result, expected)
+	}
 }
