@@ -62,9 +62,9 @@ func stats() *launce.Statistics {
 	log(s, "GET", "/test2", "2024-01-01T00:00:01.200Z", 58, -1, nil)
 	log(s, "GET", "/test3", "2024-01-01T00:00:01.600Z", -1, 0, nil)
 	log(s, "GET", "/error", "2024-01-01T00:00:01.800Z", 1234, 0, errors.New("error"))
-	log(s, "GET", "/error", "2024-01-01T00:00:01.900Z", 121, 128, errors.New("error"))
+	log(s, "GET", "/error", "2024-01-01T00:00:01.900Z", 121, 128, errors.New("error2"))
 	log(s, "GET", "/test1", "2024-01-01T00:00:01.999999999Z", 933, 180, nil)
-	log(s, "GET", "/test1", "2024-01-01T00:00:01.300Z", 124, 888, nil)
+	log(s, "GET", "/test1", "2024-01-01T00:00:01.300Z", 124, 888, errors.New("error"))
 	log(s, "GET", "/error", "2024-01-01T00:00:02.500Z", 10777, 2048, errors.New("error"))
 
 	return s
@@ -201,7 +201,7 @@ func TestStatistics_Entries_NumFailures(t *testing.T) {
 
 	fields := extractEntriesField(s, extractor)
 	expected := map[string]int64{
-		"GET:/test1": 0,
+		"GET:/test1": 1,
 		"GET:/test2": 0,
 		"GET:/test3": 0,
 		"GET:/error": 3,
@@ -227,7 +227,9 @@ func TestStatistics_Entries_NumFailuresPerSec(t *testing.T) {
 
 	fields := extractEntriesField(s, extractor)
 	expected := map[string]map[int64]int64{
-		"GET:/test1": {},
+		"GET:/test1": {
+			1704067201: 1,
+		},
 		"GET:/test2": {},
 		"GET:/test3": {},
 		"GET:/error": {
@@ -487,7 +489,7 @@ func TestStatistics_Total_NumRequestsPerSec(t *testing.T) {
 func TestStatistics_Total_NumFailures(t *testing.T) {
 	s := stats()
 
-	expected := int64(3)
+	expected := int64(4)
 	if s.Total.NumFailures != expected {
 		t.Fatalf("invalid value. got:%v, want:%v", s.Total.NumFailures, expected)
 	}
@@ -504,7 +506,7 @@ func TestStatistics_Total_NumFailuresPerSec(t *testing.T) {
 	s := stats()
 
 	expected := map[int64]int64{
-		1704067201: 2,
+		1704067201: 3,
 		1704067202: 1,
 	}
 	if !reflect.DeepEqual(s.Total.NumFailuresPerSec, expected) {
@@ -621,5 +623,25 @@ func TestStatistics_Total_ResponseTimes(t *testing.T) {
 	expected = map[int64]int64{}
 	if !reflect.DeepEqual(s.Total.ResponseTimes, expected) {
 		t.Fatalf("invalid value. got:%v, want:%v", s.Total.ResponseTimes, expected)
+	}
+}
+
+func TestStatistics_Errors(t *testing.T) {
+	s := stats()
+
+	expected := launce.StatisticsErrors{
+		{"GET", "/test1", "error"}:  1,
+		{"GET", "/error", "error"}:  2,
+		{"GET", "/error", "error2"}: 1,
+	}
+	if !reflect.DeepEqual(s.Errors, expected) {
+		t.Fatalf("invalid value. got:%v, want:%v", s.Errors, expected)
+	}
+
+	s.Move()
+
+	expected = launce.StatisticsErrors{}
+	if !reflect.DeepEqual(s.Errors, expected) {
+		t.Fatalf("invalid value. got:%v, want:%v", s.Errors, expected)
 	}
 }
