@@ -286,11 +286,6 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 				w.runner.SetHost(payload.Host)
 				w.runner.SetParsedOptions(parsedOptions)
 
-				state := atomic.LoadInt64(&w.state)
-				if state != WorkerStateRunning && state != WorkerStateSpawning {
-					w.runner.Start()
-				}
-
 				w.spawnCh <- payload.UserClassesCount
 
 			case MessageStop:
@@ -330,7 +325,7 @@ func (w *Worker) RegisterMessage(typ string, handler MessageHandler) {
 	w.runner.RegisterMessage(typ, handler)
 }
 
-func (w *Worker) OnTestStart(f func(ctx context.Context)) {
+func (w *Worker) OnTestStart(f func(ctx context.Context) error) {
 	w.runner.OnTestStart(f)
 }
 
@@ -382,6 +377,15 @@ func (w *Worker) startSpawnProcess(ctx context.Context, wg *sync.WaitGroup) {
 		for {
 			select {
 			case spawnCount := <-w.spawnCh:
+
+				// Runner がスタートしていない状態で spawn がリクエストされた場合は Runner をスタートする
+				if state := atomic.LoadInt64(&w.state); state != WorkerStateRunning && state != WorkerStateSpawning {
+					// Runner の Start 中に停止された場合は spawn を中断する
+					if err := w.runner.Start(); err != nil {
+						continue
+					}
+				}
+
 				atomic.StoreInt64(&w.state, WorkerStateSpawning)
 				_ = w.SendMessage(MessageSpawning, nil)
 

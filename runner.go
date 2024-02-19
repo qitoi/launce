@@ -47,9 +47,11 @@ type LoadRunner struct {
 	host          atomic.Value
 	parsedOptions atomic.Pointer[ParsedOptions]
 
-	testStartHandlers []func(ctx context.Context)
+	testStartHandlers []func(ctx context.Context) error
 	testStopHandlers  []func(ctx context.Context)
 	messageHandlers   map[string][]MessageHandler
+
+	cancelStart atomic.Value
 }
 
 func NewLoadRunner() (*LoadRunner, error) {
@@ -115,7 +117,7 @@ func (l *LoadRunner) SendMessage(typ string, data any) error {
 	return nil
 }
 
-func (l *LoadRunner) OnTestStart(f func(ctx context.Context)) {
+func (l *LoadRunner) OnTestStart(f func(ctx context.Context) error) {
 	l.testStartHandlers = append(l.testStartHandlers, f)
 }
 
@@ -123,18 +125,31 @@ func (l *LoadRunner) OnTestStop(f func(ctx context.Context)) {
 	l.testStopHandlers = append(l.testStopHandlers, f)
 }
 
-func (l *LoadRunner) Start() {
+func (l *LoadRunner) Start() error {
 	l.FlushStats()
-	ctx := context.Background()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	l.cancelStart.Store(cancel)
+
 	for _, f := range l.testStartHandlers {
-		f(ctx)
+		if err := f(ctx); err != nil {
+			return err
+		}
 	}
 	for _, spawner := range l.userSpawners {
 		spawner.Start()
 	}
+
+	return nil
 }
 
 func (l *LoadRunner) Stop() {
+	if f := l.cancelStart.Load(); f != nil {
+		if cancel, ok := f.(context.CancelFunc); ok {
+			cancel()
+		}
+	}
+
 	for _, spawner := range l.userSpawners {
 		spawner.Stop()
 		spawner.StopAllUsers()
