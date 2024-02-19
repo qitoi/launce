@@ -19,7 +19,6 @@ package launce
 import (
 	"context"
 	"errors"
-	"math"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -89,8 +88,6 @@ type Worker struct {
 	ackCh       chan struct{}
 	heartbeatCh chan struct{}
 	procInfo    *ProcessInfo
-
-	lastReceivedSpawnTimestamp atomic.Uint64
 }
 
 func NewWorker(transport Transport) (*Worker, error) {
@@ -248,6 +245,9 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 
 	go func() {
 		defer wg.Done()
+
+		var lastReceivedSpawnTimestamp float64
+
 		for {
 			msg, err := w.recv()
 			if err != nil {
@@ -276,11 +276,10 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 					return
 				}
 
-				timestamp := payload.Timestamp
-				lastReceived := math.Float64frombits(w.lastReceivedSpawnTimestamp.Load())
-				if timestamp <= lastReceived {
+				if payload.Timestamp <= lastReceivedSpawnTimestamp {
 					break
 				}
+				lastReceivedSpawnTimestamp = payload.Timestamp
 
 				parsedOptions, err := NewParsedOptions(payload.ParsedOptions)
 				if err != nil {
@@ -297,7 +296,6 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 
 				w.spawnCh <- payload.UserClassesCount
 
-				w.lastReceivedSpawnTimestamp.Store(math.Float64bits(timestamp))
 				break
 
 			case MessageStop:
