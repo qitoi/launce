@@ -227,7 +227,6 @@ loop:
 			if retry > connectRetryCount {
 				return ErrConnection
 			}
-			break
 
 		case <-w.ackCh:
 			break loop
@@ -268,8 +267,6 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 				default:
 				}
 
-				break
-
 			case MessageSpawn:
 				var payload SpawnPayload
 				if err := msg.DecodePayload(&payload); err != nil {
@@ -296,20 +293,16 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 
 				w.spawnCh <- payload.UserClassesCount
 
-				break
-
 			case MessageStop:
 				w.runner.SetParsedOptions(nil)
 				w.runner.Stop()
 				_ = w.SendMessage(MessageClientStopped, nil)
 				atomic.StoreInt64(&w.state, WorkerStateInit)
 				_ = w.SendMessage(MessageClientReady, w.Version)
-				break
 
 			case MessageReconnect:
 				_ = w.close()
 				_ = w.open(context.Background())
-				break
 
 			case MessageHeartbeat:
 				select {
@@ -321,11 +314,9 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 				w.Stop()
 				_ = w.sendStats()
 				w.Quit()
-				break
 
 			default:
 				w.runner.HandleMessage(msg)
-				break
 			}
 		}
 	}()
@@ -415,8 +406,6 @@ func (w *Worker) startSpawnProcess(ctx context.Context, wg *sync.WaitGroup) {
 
 				atomic.StoreInt64(&w.state, WorkerStateRunning)
 
-				break
-
 			case <-ctx.Done():
 				break loop
 			}
@@ -447,7 +436,6 @@ func (w *Worker) startHeartbeatProcess(ctx context.Context, wg *sync.WaitGroup, 
 					CurrentMemoryUsage: w.procInfo.MemoryUsage(),
 				}
 				_ = w.SendMessage(MessageHeartbeat, msg)
-				break
 
 			case <-ctx.Done():
 				break loop
@@ -472,7 +460,6 @@ func (w *Worker) startHeartbeatCheckProcess(ctx context.Context, wg *sync.WaitGr
 					<-timer.C
 				}
 				timer.Reset(timeout)
-				break
 
 			case <-timer.C:
 				w.Quit()
@@ -502,7 +489,6 @@ func (w *Worker) startStatsProcess(ctx context.Context, wg *sync.WaitGroup, inte
 			select {
 			case <-ticker.C:
 				_ = w.sendStats()
-				break
 
 			case <-ctx.Done():
 				break loop
@@ -539,7 +525,6 @@ func (w *Worker) startMetricsMonitorProcess(ctx context.Context, wg *sync.WaitGr
 			select {
 			case <-ticker.C:
 				_ = w.procInfo.Update()
-				break
 
 			case <-ctx.Done():
 				break loop

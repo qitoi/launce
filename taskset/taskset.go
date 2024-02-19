@@ -92,13 +92,13 @@ func Run(ctx context.Context, t TaskSet, user launce.User) error {
 
 		switch {
 		case err == nil || errors.Is(err, RescheduleTask):
+			// next task with wait
 			if err := wait(ctx, user, waiter); err != nil {
 				return err
 			}
-			break
 
 		case errors.Is(err, RescheduleTaskImmediately):
-			break
+			// next task without wait
 
 		case errors.Is(err, launce.StopUser):
 			_ = t.OnStop(ctx)

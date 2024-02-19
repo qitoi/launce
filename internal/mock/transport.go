@@ -81,12 +81,11 @@ func (m *Transport) Send(msg []byte) error {
 
 	select {
 	case ch <- msg:
-		break
+		return nil
+
 	case <-m.ctx.Done():
 		return ErrConnectionClosed
 	}
-
-	return nil
 }
 
 func (m *Transport) Receive() ([]byte, error) {
@@ -101,6 +100,7 @@ func (m *Transport) Receive() ([]byte, error) {
 			return nil, ErrConnectionClosed
 		}
 		return b, nil
+
 	case <-m.ctx.Done():
 		return nil, ErrConnectionClosed
 	}

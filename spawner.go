@@ -129,7 +129,6 @@ func (s *Spawner) spawnWorkerOnce(spawnCh, stopCh, stopWaitCh chan struct{}) {
 		case spawnCh <- struct{}{}:
 			// spawnCh のバッファに空きがある場合はユーザーを新規に spawn させる
 			s.spawn()
-			break
 
 		case <-stopCh:
 			return
@@ -150,7 +149,6 @@ func (s *Spawner) spawnWorkerPersistent(spawnCh, stopCh, stopWaitCh chan struct{
 		case spawnCh <- struct{}{}:
 			// spawnCh のバッファに空きがある場合はユーザーを新規に spawn させる
 			s.spawn()
-			break
 
 		case <-stopCh:
 			return
@@ -205,7 +203,6 @@ loop:
 		select {
 		case dst <- v:
 			// 移行先の channel に spawn のロックを移せられれば次のロックを取り出す
-			break
 		default:
 			// 移行先の channel が一杯の場合はユーザーを1つ捨ててからロックを移す
 			s.users.Pop(1)
