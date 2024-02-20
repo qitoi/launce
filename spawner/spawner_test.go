@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-package launce_test
+package spawner_test
 
 import (
 	"context"
@@ -24,6 +24,7 @@ import (
 
 	"github.com/qitoi/launce"
 	"github.com/qitoi/launce/internal/mock"
+	"github.com/qitoi/launce/spawner"
 )
 
 func Wait(ctx context.Context) error {
@@ -31,11 +32,11 @@ func Wait(ctx context.Context) error {
 	return ctx.Err()
 }
 
-func NewSpawner(f func(ctx context.Context, u *mock.User) error) (*launce.Spawner, *mock.UserStats, *mock.UserController) {
+func NewSpawner(f func(ctx context.Context, u *mock.User) error) (*spawner.Spawner, *mock.UserStats, *mock.UserController) {
 	gen, stats, uc := mock.UserGenerator(f)
-	return launce.NewSpawner(func(ctx context.Context) {
+	return spawner.New(func(ctx context.Context) {
 		_ = launce.ProcessUser(ctx, gen())
-	}, launce.SpawnOnce), stats, uc
+	}, spawner.SpawnOnce), stats, uc
 }
 
 func TestSpawner_Start(t *testing.T) {
@@ -272,9 +273,9 @@ func TestSpawner_Respawn_User(t *testing.T) {
 	gen, stats, uc := mock.UserGenerator(func(ctx context.Context, u *mock.User) error {
 		return Wait(ctx)
 	})
-	s := launce.NewSpawner(func(ctx context.Context) {
+	s := spawner.New(func(ctx context.Context) {
 		_ = launce.ProcessUser(ctx, gen())
-	}, launce.SpawnPersistent)
+	}, spawner.SpawnPersistent)
 
 	s.Cap(1)
 	s.Start()

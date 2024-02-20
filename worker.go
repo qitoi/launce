@@ -25,6 +25,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/qitoi/launce/internal/worker"
 )
 
 type WorkerState = int64
@@ -69,8 +71,6 @@ func generateClientID() (string, error) {
 	return hostname + "_" + uuid.NewString(), nil
 }
 
-type MessageHandler func(msg ReceivedMessage)
-
 type Worker struct {
 	Version                string
 	ClientID               string
@@ -87,7 +87,7 @@ type Worker struct {
 	spawnCh     chan map[string]int64
 	ackCh       chan struct{}
 	heartbeatCh chan struct{}
-	procInfo    *ProcessInfo
+	procInfo    *worker.ProcessInfo
 }
 
 func NewWorker(transport Transport) (*Worker, error) {
@@ -95,11 +95,11 @@ func NewWorker(transport Transport) (*Worker, error) {
 	if err != nil {
 		return nil, err
 	}
-	runner, err := NewLoadRunner()
+	runner, err := New()
 	if err != nil {
 		return nil, err
 	}
-	procInfo, err := NewProcessInfo(os.Getpid())
+	procInfo, err := worker.NewProcessInfo(os.Getpid())
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +161,7 @@ func (w *Worker) Join() error {
 	procWg.Wait()
 
 	// ワーカーの終了時はマスターに quit メッセージを送信する
-	if err := w.SendMessage(MessageQuit, nil); err != nil {
+	if err := w.SendMessage(worker.MessageQuit, nil); err != nil {
 		_ = w.close()
 		return err
 	}
@@ -215,7 +215,7 @@ clear:
 		}
 	}
 
-	if err := w.SendMessage(MessageClientReady, w.Version); err != nil {
+	if err := w.SendMessage(worker.MessageClientReady, w.Version); err != nil {
 		return err
 	}
 
@@ -255,8 +255,8 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 			}
 
 			switch msg.Type {
-			case MessageAck:
-				var payload AckPayload
+			case worker.MessageAck:
+				var payload worker.AckPayload
 				if err := msg.DecodePayload(&payload); err != nil {
 					return
 				}
@@ -267,8 +267,8 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 				default:
 				}
 
-			case MessageSpawn:
-				var payload SpawnPayload
+			case worker.MessageSpawn:
+				var payload worker.SpawnPayload
 				if err := msg.DecodePayload(&payload); err != nil {
 					return
 				}
@@ -288,24 +288,24 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 
 				w.spawnCh <- payload.UserClassesCount
 
-			case MessageStop:
+			case worker.MessageStop:
 				w.runner.SetParsedOptions(nil)
 				w.runner.Stop()
-				_ = w.SendMessage(MessageClientStopped, nil)
+				_ = w.SendMessage(worker.MessageClientStopped, nil)
 				atomic.StoreInt64(&w.state, WorkerStateInit)
-				_ = w.SendMessage(MessageClientReady, w.Version)
+				_ = w.SendMessage(worker.MessageClientReady, w.Version)
 
-			case MessageReconnect:
+			case worker.MessageReconnect:
 				_ = w.close()
 				_ = w.open(context.Background())
 
-			case MessageHeartbeat:
+			case worker.MessageHeartbeat:
 				select {
 				case w.heartbeatCh <- struct{}{}:
 				default:
 				}
 
-			case MessageQuit:
+			case worker.MessageQuit:
 				w.Stop()
 				_ = w.sendStats()
 				w.Quit()
@@ -362,7 +362,7 @@ func (w *Worker) reportException(err error) {
 	} else {
 		trace = ""
 	}
-	_ = w.SendMessage(MessageException, ExceptionPayload{
+	_ = w.SendMessage(worker.MessageException, worker.ExceptionPayload{
 		Msg:       err.Error(),
 		Traceback: trace,
 	})
@@ -387,7 +387,7 @@ func (w *Worker) startSpawnProcess(ctx context.Context, wg *sync.WaitGroup) {
 				}
 
 				atomic.StoreInt64(&w.state, WorkerStateSpawning)
-				_ = w.SendMessage(MessageSpawning, nil)
+				_ = w.SendMessage(worker.MessageSpawning, nil)
 
 				users := w.runner.Users()
 				var total int64
@@ -395,7 +395,7 @@ func (w *Worker) startSpawnProcess(ctx context.Context, wg *sync.WaitGroup) {
 					total += u
 				}
 
-				payload := &SpawningCompletePayload{
+				payload := &worker.SpawningCompletePayload{
 					UserClassesCount: make(map[string]int64),
 					UserCount:        0,
 				}
@@ -406,7 +406,7 @@ func (w *Worker) startSpawnProcess(ctx context.Context, wg *sync.WaitGroup) {
 					}
 				}
 
-				_ = w.SendMessage(MessageSpawningComplete, payload)
+				_ = w.SendMessage(worker.MessageSpawningComplete, payload)
 
 				atomic.StoreInt64(&w.state, WorkerStateRunning)
 
@@ -434,12 +434,12 @@ func (w *Worker) startHeartbeatProcess(ctx context.Context, wg *sync.WaitGroup, 
 			select {
 			case <-ticker.C:
 				state := atomic.LoadInt64(&w.state)
-				msg := HeartbeatPayload{
+				msg := worker.HeartbeatPayload{
 					State:              workerStateNames[state],
 					CurrentCPUUsage:    w.procInfo.CPUUsage(),
 					CurrentMemoryUsage: w.procInfo.MemoryUsage(),
 				}
-				_ = w.SendMessage(MessageHeartbeat, msg)
+				_ = w.SendMessage(worker.MessageHeartbeat, msg)
 
 			case <-ctx.Done():
 				break loop
@@ -507,7 +507,7 @@ func (w *Worker) sendStats() error {
 	for _, count := range payload.UserClassesCount {
 		payload.UserCount += count
 	}
-	return w.SendMessage(MessageStats, payload)
+	return w.SendMessage(worker.MessageStats, payload)
 }
 
 func (w *Worker) startMetricsMonitorProcess(ctx context.Context, wg *sync.WaitGroup, interval time.Duration) {
@@ -545,10 +545,10 @@ func (w *Worker) recv() (ReceivedMessage, error) {
 	return decodeMessage(b)
 }
 
-func convertStatisticsPayload(entries StatisticsEntries, total *StatisticsEntry, errors StatisticsErrors) *StatsPayload {
-	payload := &StatsPayload{
-		Stats:  make([]*StatsPayloadEntry, len(entries)),
-		Errors: make(map[string]*StatsPayloadError, len(errors)),
+func convertStatisticsPayload(entries StatisticsEntries, total *StatisticsEntry, errors StatisticsErrors) *worker.StatsPayload {
+	payload := &worker.StatsPayload{
+		Stats:  make([]*worker.StatsPayloadEntry, len(entries)),
+		Errors: make(map[string]*worker.StatsPayloadError, len(errors)),
 	}
 
 	var idx int
@@ -566,13 +566,13 @@ func convertStatisticsPayload(entries StatisticsEntries, total *StatisticsEntry,
 	return payload
 }
 
-func convertStatisticsEntry(name, method string, entry *StatisticsEntry) *StatsPayloadEntry {
+func convertStatisticsEntry(name, method string, entry *StatisticsEntry) *worker.StatsPayloadEntry {
 	var minResponseTime *float64
 	if entry.MinResponseTime != nil {
 		minResponseTime = new(float64)
 		*minResponseTime = float64(entry.MinResponseTime.Nanoseconds()) / 1e6 // [ms]
 	}
-	return &StatsPayloadEntry{
+	return &worker.StatsPayloadEntry{
 		Name:                 name,
 		Method:               method,
 		LastRequestTimestamp: float64(entry.LastRequestTimestamp.UnixNano()) / 1e9, // [s]
@@ -590,8 +590,8 @@ func convertStatisticsEntry(name, method string, entry *StatisticsEntry) *StatsP
 	}
 }
 
-func convertStatisticsError(key StatisticsErrorKey, occurrence int64) *StatsPayloadError {
-	return &StatsPayloadError{
+func convertStatisticsError(key StatisticsErrorKey, occurrence int64) *worker.StatsPayloadError {
+	return &worker.StatsPayloadError{
 		Name:        key.Name,
 		Method:      key.Method,
 		Error:       key.Error,

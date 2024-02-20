@@ -14,19 +14,24 @@
  *  limitations under the License.
  */
 
-package launce
+package internal
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
+var (
+	ErrWaitFuncUndefined = errors.New("wait func undefined")
+)
+
 type Waiter struct {
-	waitTime WaitTimeFunc
+	waitTime func() time.Duration
 	timer    *time.Timer
 }
 
-func (w *Waiter) Init(waitTime WaitTimeFunc) {
+func (w *Waiter) Init(waitTime func() time.Duration) {
 	w.waitTime = waitTime
 	w.timer = time.NewTimer(0)
 	if !w.timer.Stop() {

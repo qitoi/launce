@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-package launce
+package spawner
 
 import (
 	"context"
@@ -47,7 +47,7 @@ type Spawner struct {
 	spawned int64
 }
 
-func NewSpawner(f SpawnFunc, mode SpawnMode) *Spawner {
+func New(f SpawnFunc, mode SpawnMode) *Spawner {
 	return &Spawner{
 		mode:      mode,
 		spawnFunc: f,

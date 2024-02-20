@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-package launce
+package worker
 
 import (
 	"math"

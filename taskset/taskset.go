@@ -21,6 +21,7 @@ import (
 	"errors"
 
 	"github.com/qitoi/launce"
+	"github.com/qitoi/launce/internal"
 )
 
 var (
@@ -70,7 +71,7 @@ func (tq *taskQueue) Schedule(t Task, first bool) {
 
 func Run(ctx context.Context, t TaskSet, user launce.User) error {
 	var tq taskQueue
-	waiter := launce.Waiter{}
+	waiter := internal.Waiter{}
 	waiter.Init(t.WaitTime())
 
 	if err := t.OnStart(ctx, &tq); err != nil {
@@ -220,11 +221,11 @@ func unwrapTaskSet(task Task) TaskSet {
 	return nil
 }
 
-func wait(ctx context.Context, user launce.User, waiter launce.Waiter) error {
+func wait(ctx context.Context, user launce.User, waiter internal.Waiter) error {
 	if user != nil {
 		if err := user.Wait(ctx); err == nil {
 			return nil
-		} else if !errors.Is(err, launce.ErrWaitFuncUndefined) {
+		} else if !errors.Is(err, internal.ErrWaitFuncUndefined) {
 			return err
 		}
 	}

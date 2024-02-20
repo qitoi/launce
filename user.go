@@ -20,14 +20,12 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/qitoi/launce/internal"
 )
 
 var (
 	StopUser = errors.New("stop user")
-)
-
-var (
-	ErrWaitFuncUndefined = errors.New("wait func undefined")
 )
 
 func Wait(ctx context.Context, d time.Duration) error {
@@ -58,7 +56,7 @@ type User interface {
 }
 
 type BaseUser struct {
-	Waiter
+	internal.Waiter
 	runner Runner
 }
 

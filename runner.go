@@ -22,11 +22,15 @@ import (
 	"fmt"
 	"sync/atomic"
 	"time"
+
+	"github.com/qitoi/launce/spawner"
 )
 
 var (
 	_ Runner = (*LoadRunner)(nil)
 )
+
+type MessageHandler func(msg ReceivedMessage)
 
 type Runner interface {
 	Host() string
@@ -37,11 +41,11 @@ type Runner interface {
 }
 
 type LoadRunner struct {
-	SpawnMode           SpawnMode
+	SpawnMode           spawner.SpawnMode
 	ReportExceptionFunc func(error)
 	SendMessageFunc     func(typ string, data any) error
 
-	userSpawners map[string]*Spawner
+	userSpawners map[string]*spawner.Spawner
 	statistics   *Statistics
 
 	host          atomic.Value
@@ -54,11 +58,11 @@ type LoadRunner struct {
 	cancelStart atomic.Value
 }
 
-func NewLoadRunner() (*LoadRunner, error) {
+func New() (*LoadRunner, error) {
 	return &LoadRunner{
-		SpawnMode: SpawnOnce,
+		SpawnMode: spawner.SpawnOnce,
 
-		userSpawners: map[string]*Spawner{},
+		userSpawners: map[string]*spawner.Spawner{},
 		statistics:   NewStatistics(),
 
 		messageHandlers: map[string][]MessageHandler{},
@@ -95,7 +99,7 @@ func (l *LoadRunner) RegisterUser(name string, f func() User) {
 			}
 		}
 	}
-	l.userSpawners[name] = NewSpawner(spawnFunc, l.SpawnMode)
+	l.userSpawners[name] = spawner.New(spawnFunc, l.SpawnMode)
 }
 
 func (l *LoadRunner) RegisterMessage(typ string, handler MessageHandler) {
@@ -136,8 +140,8 @@ func (l *LoadRunner) Start() error {
 			return err
 		}
 	}
-	for _, spawner := range l.userSpawners {
-		spawner.Start()
+	for _, s := range l.userSpawners {
+		s.Start()
 	}
 
 	return nil
@@ -150,9 +154,9 @@ func (l *LoadRunner) Stop() {
 		}
 	}
 
-	for _, spawner := range l.userSpawners {
-		spawner.Stop()
-		spawner.StopAllUsers()
+	for _, s := range l.userSpawners {
+		s.Stop()
+		s.StopAllUsers()
 	}
 	ctx := context.Background()
 	for _, f := range l.testStopHandlers {
@@ -161,24 +165,24 @@ func (l *LoadRunner) Stop() {
 }
 
 func (l *LoadRunner) Spawn(user string, count int) error {
-	if spawner, ok := l.userSpawners[user]; ok {
-		spawner.Cap(count)
+	if s, ok := l.userSpawners[user]; ok {
+		s.Cap(count)
 		return nil
 	}
 	return fmt.Errorf("unknown user spawn: %v, %v", user, count)
 }
 
 func (l *LoadRunner) StopUsers() {
-	for _, spawner := range l.userSpawners {
-		spawner.Cap(0)
-		spawner.StopAllUsers()
+	for _, s := range l.userSpawners {
+		s.Cap(0)
+		s.StopAllUsers()
 	}
 }
 
 func (l *LoadRunner) Users() map[string]int64 {
 	ret := make(map[string]int64, len(l.userSpawners))
-	for name, spawner := range l.userSpawners {
-		ret[name] = spawner.Count()
+	for name, s := range l.userSpawners {
+		ret[name] = s.Count()
 	}
 	return ret
 }
