@@ -77,8 +77,8 @@ func (r *Random) OnStop(ctx context.Context) error {
 	return nil
 }
 
-func (r *Random) ApplyFilter(opts ...FilterOption) {
-	r.filtered = FilterTasks(r.tasks, opts...)
+func (r *Random) FilterTasks(f func(tasks []Task) []Task) {
+	r.filtered = f(r.tasks)
 }
 
 func (r *Random) Run(ctx context.Context, u launce.User, s Scheduler) error {

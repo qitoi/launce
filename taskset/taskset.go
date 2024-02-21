@@ -40,7 +40,7 @@ type TaskSet interface {
 	OnStart(ctx context.Context, s Scheduler) error
 	OnStop(ctx context.Context) error
 
-	ApplyFilter(opts ...FilterOption)
+	FilterTasks(f func(tasks []Task) []Task)
 }
 
 type taskQueue struct {
@@ -130,99 +130,6 @@ func Run(ctx context.Context, t TaskSet, user launce.User) error {
 			}
 		}
 	}
-}
-
-type FilterOptions struct {
-	tags        *[]string
-	excludeTags []string
-}
-
-type FilterOption func(opt *FilterOptions)
-
-func IncludeTags(tags ...string) FilterOption {
-	return func(opt *FilterOptions) {
-		opt.tags = &tags
-	}
-}
-
-func ExcludeTags(tags ...string) FilterOption {
-	return func(opt *FilterOptions) {
-		opt.excludeTags = tags
-	}
-}
-
-func FilterTasks(tasks []Task, opts ...FilterOption) []Task {
-	var option FilterOptions
-	for _, opt := range opts {
-		opt(&option)
-	}
-
-	var tagMap map[string]struct{}
-	if option.tags != nil {
-		tagMap = make(map[string]struct{}, len(*option.tags))
-		for _, tag := range *option.tags {
-			tagMap[tag] = struct{}{}
-		}
-	}
-
-	excludeTags := option.excludeTags
-	excludeTagMap := make(map[string]struct{})
-	for _, tag := range excludeTags {
-		excludeTagMap[tag] = struct{}{}
-	}
-
-	filtered := make([]Task, 0, len(tasks))
-loop:
-	for _, task := range tasks {
-		taskTags := GetTags(task)
-
-		for _, tag := range taskTags {
-			if _, ok := excludeTagMap[tag]; ok {
-				continue loop
-			}
-		}
-
-		add := false
-
-		if option.tags != nil {
-			for _, tag := range taskTags {
-				if _, ok := tagMap[tag]; ok {
-					add = true
-					break
-				}
-			}
-		} else {
-			add = true
-		}
-
-		if ts := unwrapTaskSet(task); ts != nil {
-			if add {
-				ts.ApplyFilter(ExcludeTags(option.excludeTags...))
-			} else {
-				ts.ApplyFilter(opts...)
-			}
-			add = ts.Len() > 0
-		}
-
-		if add {
-			filtered = append(filtered, task)
-		}
-	}
-
-	return filtered
-}
-
-func unwrapTaskSet(task Task) TaskSet {
-	for task != nil {
-		if taskset, ok := task.(TaskSet); ok {
-			return taskset
-		} else if t, ok := task.(interface{ Unwrap() Task }); ok {
-			task = unwrapTaskSet(t.Unwrap())
-		} else {
-			task = nil
-		}
-	}
-	return nil
 }
 
 func wait(ctx context.Context, user launce.User, waiter *internal.Waiter) error {

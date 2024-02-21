@@ -65,8 +65,8 @@ func (s *Sequential) OnStop(ctx context.Context) error {
 	return nil
 }
 
-func (s *Sequential) ApplyFilter(opts ...FilterOption) {
-	s.filtered = FilterTasks(s.tasks, opts...)
+func (s *Sequential) FilterTasks(f func(tasks []Task) []Task) {
+	s.filtered = f(s.tasks)
 }
 
 func (s *Sequential) Run(ctx context.Context, u launce.User, _ Scheduler) error {

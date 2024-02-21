@@ -19,7 +19,6 @@ package taskset_test
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
 	"testing"
 
@@ -101,74 +100,6 @@ func TestSequential_Run(t *testing.T) {
 
 			if !errors.Is(err, launce.StopUser) {
 				t.Fatalf("unexpected error. got:%v, want:%v", err, launce.StopUser)
-			}
-
-			if slices.Compare(result, testcase.Expected) != 0 {
-				t.Fatalf("unexpected result. got:%v, want:%v", result, testcase.Expected)
-			}
-		})
-	}
-}
-
-func TestSequential_ApplyFilter(t *testing.T) {
-	tags := func(tags ...string) *[]string {
-		return &tags
-	}
-
-	testcases := []struct {
-		Name        string
-		Tags        *[]string
-		ExcludeTags *[]string
-		Expected    []int
-	}{
-		{
-			Name:        "include tag1",
-			Tags:        tags("tag1"),
-			ExcludeTags: nil,
-			Expected:    []int{1},
-		},
-		{
-			Name:        "include tag100",
-			Tags:        tags("tag100"),
-			ExcludeTags: nil,
-			Expected:    []int{100},
-		},
-		{
-			Name:        "include tag2, tag3, exclude tag2",
-			Tags:        tags("tag2", "tag3"),
-			ExcludeTags: tags("tag2"),
-			Expected:    []int{3},
-		},
-	}
-
-	for _, testcase := range testcases {
-		t.Run(testcase.Name, func(t *testing.T) {
-			var result []int
-
-			var tasks []taskset.Task
-			for i := 1; i <= 100; i++ {
-				no := i
-				tasks = append(tasks, taskset.Tag(taskset.TaskFunc(func(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
-					result = append(result, no)
-					return taskset.InterruptTaskSet
-				}), fmt.Sprintf("tag%d", no)))
-			}
-
-			var opts []taskset.FilterOption
-			if testcase.Tags != nil {
-				opts = append(opts, taskset.IncludeTags(*testcase.Tags...))
-			}
-			if testcase.ExcludeTags != nil {
-				opts = append(opts, taskset.ExcludeTags(*testcase.ExcludeTags...))
-			}
-
-			seq := taskset.NewSequential(tasks...)
-			seq.ApplyFilter(opts...)
-
-			err := taskset.Run(context.Background(), seq, nil)
-
-			if !errors.Is(err, taskset.RescheduleTask) {
-				t.Fatal(err)
 			}
 
 			if slices.Compare(result, testcase.Expected) != 0 {
