@@ -24,6 +24,10 @@ import (
 	"github.com/qitoi/launce"
 )
 
+var (
+	_ launce.BaseUserRequirement = (*User)(nil)
+)
+
 type User struct {
 	launce.BaseUser
 
@@ -33,6 +37,10 @@ type User struct {
 	task    func(ctx context.Context) error
 	onStart func(ctx context.Context) error
 	onStop  func(ctx context.Context) error
+}
+
+func (u *User) WaitTime() launce.WaitTimeFunc {
+	return launce.Constant(0)
 }
 
 func (u *User) Process(ctx context.Context) error {

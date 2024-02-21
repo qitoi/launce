@@ -26,9 +26,17 @@ import (
 	"github.com/qitoi/launce/taskset"
 )
 
+var (
+	_ launce.BaseUserRequirement = (*testUser)(nil)
+)
+
 type testUser struct {
 	launce.BaseUser
 	Result []int
+}
+
+func (t *testUser) WaitTime() launce.WaitTimeFunc {
+	return launce.Constant(0)
 }
 
 func (t *testUser) Process(_ context.Context) error {

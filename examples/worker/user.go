@@ -26,6 +26,10 @@ import (
 	"github.com/qitoi/launce"
 )
 
+var (
+	_ launce.BaseUserRequirement = (*User)(nil)
+)
+
 type User struct {
 	launce.BaseUser
 }

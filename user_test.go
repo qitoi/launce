@@ -24,12 +24,20 @@ import (
 	"github.com/qitoi/launce"
 )
 
+var (
+	_ launce.BaseUserRequirement = (*testUser)(nil)
+)
+
 type testUser struct {
 	launce.BaseUser
 	Start func(ctx context.Context) error
 	Stop  func(ctx context.Context) error
 	Func  func(ctx context.Context) error
 	Value int
+}
+
+func (t *testUser) WaitTime() launce.WaitTimeFunc {
+	return launce.Constant(0)
 }
 
 func (t *testUser) OnStart(ctx context.Context) error {

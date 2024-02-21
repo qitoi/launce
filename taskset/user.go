@@ -23,17 +23,27 @@ import (
 	"github.com/qitoi/launce"
 )
 
-var (
-	_ launce.User = (*User)(nil)
-)
+type UserRequirement interface {
+	launce.BaseUserRequirement
+	TaskSet() TaskSet
+}
 
 type User struct {
 	launce.BaseUser
 	taskset TaskSet
 }
 
-func (u *User) OnStart(ctx context.Context) error {
-	option := u.Runner().ParsedOptions()
+func (tu *User) Init(u launce.User, r launce.Runner) {
+	if tur, ok := u.(UserRequirement); !ok {
+		panic("not implemented taskset.UserRequirement")
+	} else {
+		tu.BaseUser.Init(u, r)
+		tu.taskset = tur.TaskSet()
+	}
+}
+
+func (tu *User) OnStart(ctx context.Context) error {
+	option := tu.Runner().ParsedOptions()
 
 	var opts []FilterOption
 	if option.Tags != nil {
@@ -43,21 +53,13 @@ func (u *User) OnStart(ctx context.Context) error {
 		opts = append(opts, ExcludeTags(*option.ExcludeTags...))
 	}
 
-	u.taskset.ApplyFilter(opts...)
+	tu.taskset.ApplyFilter(opts...)
 
 	return nil
 }
 
-func (u *User) OnStop(ctx context.Context) error {
-	return nil
-}
-
-func (u *User) SetTaskSet(taskset TaskSet) {
-	u.taskset = taskset
-}
-
-func (u *User) Process(ctx context.Context) error {
-	err := Run(ctx, u.taskset, u)
+func (tu *User) Process(ctx context.Context) error {
+	err := Run(ctx, tu.taskset, tu)
 	if err == nil || errors.Is(err, RescheduleTask) || errors.Is(err, RescheduleTaskImmediately) {
 		return nil
 	} else {

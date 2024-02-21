@@ -19,7 +19,6 @@ package launce
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/qitoi/launce/internal"
 )
@@ -28,49 +27,42 @@ var (
 	StopUser = errors.New("stop user")
 )
 
-func Wait(ctx context.Context, d time.Duration) error {
-	if d <= 0 {
-		d = 0
-	}
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
 type User interface {
-	Init(r Runner, waitTime WaitTimeFunc)
-
+	Init(u User, r Runner)
 	Runner() Runner
 
 	Wait(ctx context.Context) error
-	WaitTime() WaitTimeFunc
 
 	OnStart(ctx context.Context) error
 	OnStop(ctx context.Context) error
 	Process(ctx context.Context) error
 }
 
+type BaseUserRequirement interface {
+	User
+	WaitTime() WaitTimeFunc
+}
+
 type BaseUser struct {
-	internal.Waiter
+	waiter internal.Waiter
 	runner Runner
 }
 
-func (b *BaseUser) Init(r Runner, waitTime WaitTimeFunc) {
-	b.runner = r
-	b.Waiter.Init(waitTime)
+func (b *BaseUser) Init(u User, r Runner) {
+	if bu, ok := u.(BaseUserRequirement); !ok {
+		panic("not implemented launce.BaseUserRequirement")
+	} else {
+		b.runner = r
+		b.waiter.Init(bu.WaitTime())
+	}
 }
 
 func (b *BaseUser) Runner() Runner {
 	return b.runner
 }
 
-func (b *BaseUser) WaitTime() WaitTimeFunc {
-	return Constant(0)
+func (b *BaseUser) Wait(ctx context.Context) error {
+	return b.waiter.Wait(ctx)
 }
 
 func (b *BaseUser) OnStart(ctx context.Context) error {

@@ -93,7 +93,7 @@ func (l *LoadRunner) SetParsedOptions(options *ParsedOptions) {
 func (l *LoadRunner) RegisterUser(name string, f func() User) {
 	spawnFunc := func(ctx context.Context) {
 		user := f()
-		user.Init(l, user.WaitTime())
+		user.Init(user, l)
 		if err := ProcessUser(ctx, user); err != nil {
 			if !errors.Is(err, context.Canceled) {
 			}

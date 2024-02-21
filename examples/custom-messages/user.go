@@ -24,19 +24,22 @@ import (
 	"github.com/qitoi/launce/taskset"
 )
 
+var (
+	_ taskset.UserRequirement = (*User)(nil)
+)
+
 type User struct {
 	taskset.User
 }
 
-func (u *User) Init(r launce.Runner, waitTime launce.WaitTimeFunc) {
-	u.User.Init(r, waitTime)
-	u.SetTaskSet(taskset.NewSequential(
+func (u *User) WaitTime() launce.WaitTimeFunc {
+	return launce.Constant(1 * time.Second)
+}
+
+func (u *User) TaskSet() taskset.TaskSet {
+	return taskset.NewSequential(
 		taskset.TaskFunc(func(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
 			return nil
 		}),
-	))
-}
-
-func (u *User) WaitTime() launce.WaitTimeFunc {
-	return launce.Constant(1 * time.Second)
+	)
 }

@@ -25,13 +25,20 @@ import (
 	"github.com/qitoi/launce/taskset"
 )
 
+var (
+	_ taskset.UserRequirement = (*User)(nil)
+)
+
 type User struct {
 	taskset.User
 }
 
-func (u *User) Init(r launce.Runner, waitTime launce.WaitTimeFunc) {
-	u.User.Init(r, waitTime)
-	u.SetTaskSet(taskset.NewRandom(
+func (u *User) WaitTime() launce.WaitTimeFunc {
+	return launce.Between(100*time.Millisecond, 200*time.Millisecond)
+}
+
+func (u *User) TaskSet() taskset.TaskSet {
+	return taskset.NewRandom(
 		taskset.Weight(taskset.TaskFunc(foo), 1),
 		taskset.Weight(taskset.TaskFunc(u.bar), 2),
 		taskset.Weight(taskset.NewSequential(
@@ -39,11 +46,7 @@ func (u *User) Init(r launce.Runner, waitTime launce.WaitTimeFunc) {
 			taskset.TaskFunc(u.seq2),
 			&seq3{},
 		), 1),
-	))
-}
-
-func (u *User) WaitTime() launce.WaitTimeFunc {
-	return launce.Between(100*time.Millisecond, 200*time.Millisecond)
+	)
 }
 
 func foo(_ context.Context, u launce.User, _ taskset.Scheduler) error {

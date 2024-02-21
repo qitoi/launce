@@ -39,22 +39,25 @@ import (
      task1 would be executed
 */
 
+var (
+	_ taskset.UserRequirement = (*User)(nil)
+)
+
 type User struct {
 	taskset.User
 }
 
-func (u *User) Init(r launce.Runner, waitTime launce.WaitTimeFunc) {
-	u.User.Init(r, waitTime)
-	u.SetTaskSet(taskset.NewSequential(
+func (u *User) WaitTime() launce.WaitTimeFunc {
+	return launce.Between(100*time.Millisecond, 200*time.Millisecond)
+}
+
+func (u *User) TaskSet() taskset.TaskSet {
+	return taskset.NewSequential(
 		taskset.Tag(taskset.TaskFunc(u.task1), "tag1"),
 		taskset.Tag(taskset.TaskFunc(u.task2), "tag1", "tag2"),
 		taskset.Tag(taskset.TaskFunc(u.task3), "tag3"),
 		taskset.TaskFunc(u.task4),
-	))
-}
-
-func (u *User) WaitTime() launce.WaitTimeFunc {
-	return launce.Between(100*time.Millisecond, 200*time.Millisecond)
+	)
 }
 
 func (u *User) task1(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
