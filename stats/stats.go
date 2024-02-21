@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-package launce
+package stats
 
 import (
 	"crypto/sha256"
@@ -28,71 +28,66 @@ var (
 	unixTimeZero = time.Unix(0, 0)
 )
 
-type Statistics struct {
+type Stats struct {
 	mu sync.Mutex
 
-	Entries StatisticsEntries
-	Total   *StatisticsEntry
-	Errors  StatisticsErrors
+	Entries Entries
+	Total   *Entry
+	Errors  Errors
 }
 
-func NewStatistics() *Statistics {
-	return &Statistics{
-		Entries: StatisticsEntries{},
-		Total:   newStatisticsEntry(),
-		Errors:  StatisticsErrors{},
+func New() *Stats {
+	return &Stats{
+		Entries: Entries{},
+		Total:   newEntry(),
+		Errors:  Errors{},
 	}
 }
 
-func (s *Statistics) Move() (StatisticsEntries, *StatisticsEntry, StatisticsErrors) {
+func (s *Stats) Flush() (Entries, *Entry, Errors) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	entries, total, errors := s.Entries, s.Total, s.Errors
-	s.Entries = StatisticsEntries{}
-	s.Total = newStatisticsEntry()
-	s.Errors = StatisticsErrors{}
+	s.Entries = Entries{}
+	s.Total = newEntry()
+	s.Errors = Errors{}
 	return entries, total, errors
 }
 
-func (s *Statistics) Clear() {
+func (s *Stats) Clear() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.Entries = StatisticsEntries{}
-	s.Total = newStatisticsEntry()
-	s.Errors = StatisticsErrors{}
+	s.Entries = Entries{}
+	s.Total = newEntry()
+	s.Errors = Errors{}
 }
 
-func (s *Statistics) Add(now time.Time, requestType, name string, opts ...StatisticsOption) {
-	key := StatisticsEntryKey{requestType, name}
-
-	opt := statisticsOption{}
-	for _, f := range opts {
-		f(&opt)
-	}
+func (s *Stats) Add(now time.Time, requestType, name string, opts Options) {
+	key := EntryKey{requestType, name}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.Total.Add(now, opt)
+	s.Total.Add(now, opts)
 
 	if _, ok := s.Entries[key]; !ok {
-		s.Entries[key] = newStatisticsEntry()
+		s.Entries[key] = newEntry()
 	}
-	s.Entries[key].Add(now, opt)
+	s.Entries[key].Add(now, opts)
 
-	if opt.Error != nil {
-		s.Errors.Add(requestType, name, opt.Error)
+	if opts.Error != nil {
+		s.Errors.Add(requestType, name, opts.Error)
 	}
 }
 
-type StatisticsEntries map[StatisticsEntryKey]*StatisticsEntry
+type Entries map[EntryKey]*Entry
 
-type StatisticsEntryKey struct {
+type EntryKey struct {
 	Method string
 	Name   string
 }
 
-type StatisticsEntry struct {
+type Entry struct {
 	StartTime time.Time
 
 	NumRequests          int64
@@ -111,33 +106,7 @@ type StatisticsEntry struct {
 	ResponseTimes map[int64]int64
 }
 
-type statisticsOption struct {
-	ResponseTime   *time.Duration
-	ResponseLength int64
-	Error          error
-}
-
-type StatisticsOption func(opt *statisticsOption)
-
-func WithResponseTime(d time.Duration) StatisticsOption {
-	return func(opt *statisticsOption) {
-		opt.ResponseTime = &d
-	}
-}
-
-func WithResponseLength(s int64) StatisticsOption {
-	return func(opt *statisticsOption) {
-		opt.ResponseLength = s
-	}
-}
-
-func WithError(err error) StatisticsOption {
-	return func(opt *statisticsOption) {
-		opt.Error = err
-	}
-}
-
-func (s *StatisticsEntry) Add(now time.Time, opt statisticsOption) {
+func (s *Entry) Add(now time.Time, opt Options) {
 	t := now.Unix()
 
 	if s.StartTime == unixTimeZero || s.StartTime.After(now) {
@@ -181,8 +150,8 @@ func (s *StatisticsEntry) Add(now time.Time, opt statisticsOption) {
 	}
 }
 
-func newStatisticsEntry() *StatisticsEntry {
-	return &StatisticsEntry{
+func newEntry() *Entry {
+	return &Entry{
 		StartTime:            unixTimeZero,
 		NumRequests:          0,
 		NumNoneRequests:      0,
@@ -197,26 +166,32 @@ func newStatisticsEntry() *StatisticsEntry {
 	}
 }
 
-type StatisticsErrorKey struct {
+type ErrorKey struct {
 	Method string
 	Name   string
 	Error  string
 }
 
-func (s *StatisticsErrorKey) Encode() string {
+func (s *ErrorKey) Encode() string {
 	d := sha256.New()
 	d.Write([]byte(s.Method + "." + s.Name + "." + s.Error))
 	return fmt.Sprintf("%x", d.Sum(nil))
 }
 
-type StatisticsErrors map[StatisticsErrorKey]int64
+type Errors map[ErrorKey]int64
 
-func (s StatisticsErrors) Add(method, name string, err error) {
-	key := StatisticsErrorKey{method, name, err.Error()}
+func (s Errors) Add(method, name string, err error) {
+	key := ErrorKey{method, name, err.Error()}
 	if _, ok := s[key]; !ok {
 		s[key] = 0
 	}
 	s[key] += 1
+}
+
+type Options struct {
+	ResponseTime   *time.Duration
+	ResponseLength int64
+	Error          error
 }
 
 func roundResponseTime(d time.Duration) int64 {

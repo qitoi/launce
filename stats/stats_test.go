@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-package launce_test
+package stats_test
 
 import (
 	"errors"
@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qitoi/launce"
+	"github.com/qitoi/launce/stats"
 )
 
 func ptr[T any](v T) *T {
@@ -38,23 +38,23 @@ func parseTime(s string) time.Time {
 	return t
 }
 
-func log(s *launce.Statistics, typ, name, datetime string, duration int, size int64, err error) {
-	var opts []launce.StatisticsOption
+func log(s *stats.Stats, typ, name, datetime string, duration int, size int64, err error) {
+	var opts stats.Options
 	if duration >= 0 {
-		opts = append(opts, launce.WithResponseTime(time.Duration(duration)*time.Millisecond))
+		opts.ResponseTime = ptr(time.Duration(duration) * time.Millisecond)
 	}
 	if size >= 0 {
-		opts = append(opts, launce.WithResponseLength(size))
+		opts.ResponseLength = size
 	}
 	if err != nil {
-		opts = append(opts, launce.WithError(err))
+		opts.Error = err
 	}
 	tm := parseTime(datetime)
-	s.Add(tm, typ, name, opts...)
+	s.Add(tm, typ, name, opts)
 }
 
-func stats() *launce.Statistics {
-	s := launce.NewStatistics()
+func getStats() *stats.Stats {
+	s := stats.New()
 
 	log(s, "GET", "/test1", "2024-01-01T00:00:00.110Z", -1, -1, nil)
 	log(s, "GET", "/test2", "2024-01-01T00:00:00.080Z", 8, 10, nil)
@@ -70,7 +70,7 @@ func stats() *launce.Statistics {
 	return s
 }
 
-func extractEntriesField[T any](s *launce.Statistics, f func(e *launce.StatisticsEntry) T) map[string]T {
+func extractEntriesField[T any](s *stats.Stats, f func(e *stats.Entry) T) map[string]T {
 	fields := map[string]T{}
 	for key, entry := range s.Entries {
 		fields[fmt.Sprintf("%s:%s", key.Method, key.Name)] = f(entry)
@@ -79,8 +79,8 @@ func extractEntriesField[T any](s *launce.Statistics, f func(e *launce.Statistic
 }
 
 func TestStatistics_Entries_StartTime(t *testing.T) {
-	s := stats()
-	extractor := func(e *launce.StatisticsEntry) time.Time {
+	s := getStats()
+	extractor := func(e *stats.Entry) time.Time {
 		return e.StartTime
 	}
 
@@ -95,7 +95,7 @@ func TestStatistics_Entries_StartTime(t *testing.T) {
 		t.Fatalf("invalid value. got:%v, want:%v", fields, expected)
 	}
 
-	s.Move()
+	s.Flush()
 
 	fields = extractEntriesField(s, extractor)
 	expected = map[string]time.Time{}
@@ -105,8 +105,8 @@ func TestStatistics_Entries_StartTime(t *testing.T) {
 }
 
 func TestStatistics_Entries_NumRequests(t *testing.T) {
-	s := stats()
-	extractor := func(e *launce.StatisticsEntry) int64 {
+	s := getStats()
+	extractor := func(e *stats.Entry) int64 {
 		return e.NumRequests
 	}
 
@@ -121,7 +121,7 @@ func TestStatistics_Entries_NumRequests(t *testing.T) {
 		t.Fatalf("invalid value. got:%v, want:%v", fields, expected)
 	}
 
-	s.Move()
+	s.Flush()
 
 	fields = extractEntriesField(s, extractor)
 	expected = map[string]int64{}
@@ -131,8 +131,8 @@ func TestStatistics_Entries_NumRequests(t *testing.T) {
 }
 
 func TestStatistics_Entries_NumNoneRequests(t *testing.T) {
-	s := stats()
-	extractor := func(e *launce.StatisticsEntry) int64 {
+	s := getStats()
+	extractor := func(e *stats.Entry) int64 {
 		return e.NumNoneRequests
 	}
 
@@ -147,7 +147,7 @@ func TestStatistics_Entries_NumNoneRequests(t *testing.T) {
 		t.Fatalf("invalid value. got:%v, want:%v", fields, expected)
 	}
 
-	s.Move()
+	s.Flush()
 
 	fields = extractEntriesField(s, extractor)
 	expected = map[string]int64{}
@@ -157,8 +157,8 @@ func TestStatistics_Entries_NumNoneRequests(t *testing.T) {
 }
 
 func TestStatistics_Entries_NumRequestsPerSec(t *testing.T) {
-	s := stats()
-	extractor := func(e *launce.StatisticsEntry) map[int64]int64 {
+	s := getStats()
+	extractor := func(e *stats.Entry) map[int64]int64 {
 		return e.NumRequestsPerSec
 	}
 
@@ -184,7 +184,7 @@ func TestStatistics_Entries_NumRequestsPerSec(t *testing.T) {
 		t.Fatalf("invalid value. got:%v, want:%v", fields, expected)
 	}
 
-	s.Move()
+	s.Flush()
 
 	fields = extractEntriesField(s, extractor)
 	expected = map[string]map[int64]int64{}
@@ -194,8 +194,8 @@ func TestStatistics_Entries_NumRequestsPerSec(t *testing.T) {
 }
 
 func TestStatistics_Entries_NumFailures(t *testing.T) {
-	s := stats()
-	extractor := func(e *launce.StatisticsEntry) int64 {
+	s := getStats()
+	extractor := func(e *stats.Entry) int64 {
 		return e.NumFailures
 	}
 
@@ -210,7 +210,7 @@ func TestStatistics_Entries_NumFailures(t *testing.T) {
 		t.Fatalf("invalid value. got:%v, want:%v", fields, expected)
 	}
 
-	s.Move()
+	s.Flush()
 
 	fields = extractEntriesField(s, extractor)
 	expected = map[string]int64{}
@@ -220,8 +220,8 @@ func TestStatistics_Entries_NumFailures(t *testing.T) {
 }
 
 func TestStatistics_Entries_NumFailuresPerSec(t *testing.T) {
-	s := stats()
-	extractor := func(e *launce.StatisticsEntry) map[int64]int64 {
+	s := getStats()
+	extractor := func(e *stats.Entry) map[int64]int64 {
 		return e.NumFailuresPerSec
 	}
 
@@ -241,7 +241,7 @@ func TestStatistics_Entries_NumFailuresPerSec(t *testing.T) {
 		t.Fatalf("invalid value. got:%v, want:%v", fields, expected)
 	}
 
-	s.Move()
+	s.Flush()
 
 	fields = extractEntriesField(s, extractor)
 	expected = map[string]map[int64]int64{}
@@ -251,8 +251,8 @@ func TestStatistics_Entries_NumFailuresPerSec(t *testing.T) {
 }
 
 func TestStatistics_Entries_LastRequestTimestamp(t *testing.T) {
-	s := stats()
-	extractor := func(e *launce.StatisticsEntry) time.Time {
+	s := getStats()
+	extractor := func(e *stats.Entry) time.Time {
 		return e.LastRequestTimestamp
 	}
 
@@ -267,7 +267,7 @@ func TestStatistics_Entries_LastRequestTimestamp(t *testing.T) {
 		t.Fatalf("invalid value. got:%v, want:%v", fields, expected)
 	}
 
-	s.Move()
+	s.Flush()
 
 	fields = extractEntriesField(s, extractor)
 	expected = map[string]time.Time{}
@@ -277,8 +277,8 @@ func TestStatistics_Entries_LastRequestTimestamp(t *testing.T) {
 }
 
 func TestStatistics_Entries_TotalResponseTime(t *testing.T) {
-	s := stats()
-	extractor := func(e *launce.StatisticsEntry) time.Duration {
+	s := getStats()
+	extractor := func(e *stats.Entry) time.Duration {
 		return e.TotalResponseTime
 	}
 
@@ -293,7 +293,7 @@ func TestStatistics_Entries_TotalResponseTime(t *testing.T) {
 		t.Fatalf("invalid value. got:%v, want:%v", fields, expected)
 	}
 
-	s.Move()
+	s.Flush()
 
 	fields = extractEntriesField(s, extractor)
 	expected = map[string]time.Duration{}
@@ -303,8 +303,8 @@ func TestStatistics_Entries_TotalResponseTime(t *testing.T) {
 }
 
 func TestStatistics_Entries_MinResponseTime(t *testing.T) {
-	s := stats()
-	extractor := func(e *launce.StatisticsEntry) *time.Duration {
+	s := getStats()
+	extractor := func(e *stats.Entry) *time.Duration {
 		return e.MinResponseTime
 	}
 
@@ -319,7 +319,7 @@ func TestStatistics_Entries_MinResponseTime(t *testing.T) {
 		t.Fatalf("invalid value. got:%v, want:%v", fields, expected)
 	}
 
-	s.Move()
+	s.Flush()
 
 	fields = extractEntriesField(s, extractor)
 	expected = map[string]*time.Duration{}
@@ -329,8 +329,8 @@ func TestStatistics_Entries_MinResponseTime(t *testing.T) {
 }
 
 func TestStatistics_Entries_MaxResponseTime(t *testing.T) {
-	s := stats()
-	extractor := func(e *launce.StatisticsEntry) time.Duration {
+	s := getStats()
+	extractor := func(e *stats.Entry) time.Duration {
 		return e.MaxResponseTime
 	}
 
@@ -345,7 +345,7 @@ func TestStatistics_Entries_MaxResponseTime(t *testing.T) {
 		t.Fatalf("invalid value. got:%v, want:%v", fields, expected)
 	}
 
-	s.Move()
+	s.Flush()
 
 	fields = extractEntriesField(s, extractor)
 	expected = map[string]time.Duration{}
@@ -355,8 +355,8 @@ func TestStatistics_Entries_MaxResponseTime(t *testing.T) {
 }
 
 func TestStatistics_Entries_TotalContentLength(t *testing.T) {
-	s := stats()
-	extractor := func(e *launce.StatisticsEntry) int64 {
+	s := getStats()
+	extractor := func(e *stats.Entry) int64 {
 		return e.TotalContentLength
 	}
 
@@ -371,7 +371,7 @@ func TestStatistics_Entries_TotalContentLength(t *testing.T) {
 		t.Fatalf("invalid value. got:%v, want:%v", fields, expected)
 	}
 
-	s.Move()
+	s.Flush()
 
 	fields = extractEntriesField(s, extractor)
 	expected = map[string]int64{}
@@ -381,8 +381,8 @@ func TestStatistics_Entries_TotalContentLength(t *testing.T) {
 }
 
 func TestStatistics_Entries_ResponseTimes(t *testing.T) {
-	s := stats()
-	extractor := func(e *launce.StatisticsEntry) map[int64]int64 {
+	s := getStats()
+	extractor := func(e *stats.Entry) map[int64]int64 {
 		return e.ResponseTimes
 	}
 
@@ -407,7 +407,7 @@ func TestStatistics_Entries_ResponseTimes(t *testing.T) {
 		t.Fatalf("invalid value. got:%v, want:%v", fields, expected)
 	}
 
-	s.Move()
+	s.Flush()
 
 	fields = extractEntriesField(s, extractor)
 	expected = map[string]map[int64]int64{}
@@ -419,14 +419,14 @@ func TestStatistics_Entries_ResponseTimes(t *testing.T) {
 // Total
 
 func TestStatistics_Total_StartTime(t *testing.T) {
-	s := stats()
+	s := getStats()
 
 	expected := parseTime("2024-01-01T00:00:00.080Z")
 	if s.Total.StartTime != expected {
 		t.Fatalf("invalid value. got:%v, want:%v", s.Total.StartTime, expected)
 	}
 
-	s.Move()
+	s.Flush()
 
 	expected = time.Unix(0, 0)
 	if s.Total.StartTime != expected {
@@ -435,14 +435,14 @@ func TestStatistics_Total_StartTime(t *testing.T) {
 }
 
 func TestStatistics_Total_NumRequests(t *testing.T) {
-	s := stats()
+	s := getStats()
 
 	expected := int64(10)
 	if s.Total.NumRequests != expected {
 		t.Fatalf("invalid value. got:%v, want:%v", s.Total.NumRequests, expected)
 	}
 
-	s.Move()
+	s.Flush()
 
 	expected = 0
 	if s.Total.NumRequests != expected {
@@ -451,14 +451,14 @@ func TestStatistics_Total_NumRequests(t *testing.T) {
 }
 
 func TestStatistics_Total_NumNoneRequests(t *testing.T) {
-	s := stats()
+	s := getStats()
 
 	expected := int64(2)
 	if s.Total.NumNoneRequests != expected {
 		t.Fatalf("invalid value. got:%v, want:%v", s.Total.NumNoneRequests, expected)
 	}
 
-	s.Move()
+	s.Flush()
 
 	expected = 0
 	if s.Total.NumNoneRequests != expected {
@@ -467,7 +467,7 @@ func TestStatistics_Total_NumNoneRequests(t *testing.T) {
 }
 
 func TestStatistics_Total_NumRequestsPerSec(t *testing.T) {
-	s := stats()
+	s := getStats()
 
 	expected := map[int64]int64{
 		1704067200: 3,
@@ -478,7 +478,7 @@ func TestStatistics_Total_NumRequestsPerSec(t *testing.T) {
 		t.Fatalf("invalid value. got:%v, want:%v", s.Total.NumRequestsPerSec, expected)
 	}
 
-	s.Move()
+	s.Flush()
 
 	expected = map[int64]int64{}
 	if !reflect.DeepEqual(s.Total.NumRequestsPerSec, expected) {
@@ -487,14 +487,14 @@ func TestStatistics_Total_NumRequestsPerSec(t *testing.T) {
 }
 
 func TestStatistics_Total_NumFailures(t *testing.T) {
-	s := stats()
+	s := getStats()
 
 	expected := int64(4)
 	if s.Total.NumFailures != expected {
 		t.Fatalf("invalid value. got:%v, want:%v", s.Total.NumFailures, expected)
 	}
 
-	s.Move()
+	s.Flush()
 
 	expected = 0
 	if s.Total.NumFailures != expected {
@@ -503,7 +503,7 @@ func TestStatistics_Total_NumFailures(t *testing.T) {
 }
 
 func TestStatistics_Total_NumFailuresPerSec(t *testing.T) {
-	s := stats()
+	s := getStats()
 
 	expected := map[int64]int64{
 		1704067201: 3,
@@ -513,7 +513,7 @@ func TestStatistics_Total_NumFailuresPerSec(t *testing.T) {
 		t.Fatalf("invalid value. got:%v, want:%v", s.Total.NumFailuresPerSec, expected)
 	}
 
-	s.Move()
+	s.Flush()
 
 	expected = map[int64]int64{}
 	if !reflect.DeepEqual(s.Total.NumFailuresPerSec, expected) {
@@ -522,14 +522,14 @@ func TestStatistics_Total_NumFailuresPerSec(t *testing.T) {
 }
 
 func TestStatistics_Total_LastRequestTimestamp(t *testing.T) {
-	s := stats()
+	s := getStats()
 
 	expected := parseTime("2024-01-01T00:00:02.500Z")
 	if s.Total.LastRequestTimestamp != expected {
 		t.Fatalf("invalid value. got:%v, want:%v", s.Total.LastRequestTimestamp, expected)
 	}
 
-	s.Move()
+	s.Flush()
 
 	expected = time.Unix(0, 0)
 	if s.Total.LastRequestTimestamp != expected {
@@ -538,14 +538,14 @@ func TestStatistics_Total_LastRequestTimestamp(t *testing.T) {
 }
 
 func TestStatistics_Total_TotalResponseTime(t *testing.T) {
-	s := stats()
+	s := getStats()
 
 	expected := 13371 * time.Millisecond
 	if s.Total.TotalResponseTime != expected {
 		t.Fatalf("invalid value. got:%v, want:%v", s.Total.TotalResponseTime, expected)
 	}
 
-	s.Move()
+	s.Flush()
 
 	expected = 0
 	if s.Total.TotalResponseTime != expected {
@@ -554,14 +554,14 @@ func TestStatistics_Total_TotalResponseTime(t *testing.T) {
 }
 
 func TestStatistics_Total_MinResponseTime(t *testing.T) {
-	s := stats()
+	s := getStats()
 
 	expected := 8 * time.Millisecond
 	if s.Total.MinResponseTime != nil && *s.Total.MinResponseTime != expected {
 		t.Fatalf("invalid value. got:%v, want:%v", s.Total.MinResponseTime, expected)
 	}
 
-	s.Move()
+	s.Flush()
 
 	{
 		expected := (*time.Duration)(nil)
@@ -572,14 +572,14 @@ func TestStatistics_Total_MinResponseTime(t *testing.T) {
 }
 
 func TestStatistics_Total_MaxResponseTime(t *testing.T) {
-	s := stats()
+	s := getStats()
 
 	expected := 10777 * time.Millisecond
 	if s.Total.MaxResponseTime != expected {
 		t.Fatalf("invalid value. got:%v, want:%v", s.Total.MaxResponseTime, expected)
 	}
 
-	s.Move()
+	s.Flush()
 
 	expected = 0
 	if s.Total.MaxResponseTime != expected {
@@ -588,14 +588,14 @@ func TestStatistics_Total_MaxResponseTime(t *testing.T) {
 }
 
 func TestStatistics_Total_TotalContentLength(t *testing.T) {
-	s := stats()
+	s := getStats()
 
 	expected := int64(3314)
 	if s.Total.TotalContentLength != expected {
 		t.Fatalf("invalid value. got:%v, want:%v", s.Total.TotalContentLength, expected)
 	}
 
-	s.Move()
+	s.Flush()
 
 	expected = 0
 	if s.Total.TotalContentLength != expected {
@@ -604,7 +604,7 @@ func TestStatistics_Total_TotalContentLength(t *testing.T) {
 }
 
 func TestStatistics_Total_ResponseTimes(t *testing.T) {
-	s := stats()
+	s := getStats()
 
 	expected := map[int64]int64{
 		8:     1,
@@ -618,7 +618,7 @@ func TestStatistics_Total_ResponseTimes(t *testing.T) {
 		t.Fatalf("invalid value. got:%v, want:%v", s.Total.ResponseTimes, expected)
 	}
 
-	s.Move()
+	s.Flush()
 
 	expected = map[int64]int64{}
 	if !reflect.DeepEqual(s.Total.ResponseTimes, expected) {
@@ -627,9 +627,9 @@ func TestStatistics_Total_ResponseTimes(t *testing.T) {
 }
 
 func TestStatistics_Errors(t *testing.T) {
-	s := stats()
+	s := getStats()
 
-	expected := launce.StatisticsErrors{
+	expected := stats.Errors{
 		{"GET", "/test1", "error"}:  1,
 		{"GET", "/error", "error"}:  2,
 		{"GET", "/error", "error2"}: 1,
@@ -638,9 +638,9 @@ func TestStatistics_Errors(t *testing.T) {
 		t.Fatalf("invalid value. got:%v, want:%v", s.Errors, expected)
 	}
 
-	s.Move()
+	s.Flush()
 
-	expected = launce.StatisticsErrors{}
+	expected = stats.Errors{}
 	if !reflect.DeepEqual(s.Errors, expected) {
 		t.Fatalf("invalid value. got:%v, want:%v", s.Errors, expected)
 	}

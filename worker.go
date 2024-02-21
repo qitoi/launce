@@ -27,6 +27,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/qitoi/launce/internal/worker"
+	"github.com/qitoi/launce/stats"
 )
 
 type WorkerState = int64
@@ -545,7 +546,7 @@ func (w *Worker) recv() (ReceivedMessage, error) {
 	return decodeMessage(b)
 }
 
-func convertStatisticsPayload(entries StatisticsEntries, total *StatisticsEntry, errors StatisticsErrors) *worker.StatsPayload {
+func convertStatisticsPayload(entries stats.Entries, total *stats.Entry, errors stats.Errors) *worker.StatsPayload {
 	payload := &worker.StatsPayload{
 		Stats:  make([]*worker.StatsPayloadEntry, len(entries)),
 		Errors: make(map[string]*worker.StatsPayloadError, len(errors)),
@@ -566,7 +567,7 @@ func convertStatisticsPayload(entries StatisticsEntries, total *StatisticsEntry,
 	return payload
 }
 
-func convertStatisticsEntry(name, method string, entry *StatisticsEntry) *worker.StatsPayloadEntry {
+func convertStatisticsEntry(name, method string, entry *stats.Entry) *worker.StatsPayloadEntry {
 	var minResponseTime *float64
 	if entry.MinResponseTime != nil {
 		minResponseTime = new(float64)
@@ -590,7 +591,7 @@ func convertStatisticsEntry(name, method string, entry *StatisticsEntry) *worker
 	}
 }
 
-func convertStatisticsError(key StatisticsErrorKey, occurrence int64) *worker.StatsPayloadError {
+func convertStatisticsError(key stats.ErrorKey, occurrence int64) *worker.StatsPayloadError {
 	return &worker.StatsPayloadError{
 		Name:        key.Name,
 		Method:      key.Method,

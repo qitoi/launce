@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/qitoi/launce/spawner"
+	"github.com/qitoi/launce/stats"
 )
 
 var (
@@ -32,10 +33,30 @@ var (
 
 type MessageHandler func(msg ReceivedMessage)
 
+type StatsOption func(opt *stats.Options)
+
+func WithResponseTime(d time.Duration) StatsOption {
+	return func(opt *stats.Options) {
+		opt.ResponseTime = &d
+	}
+}
+
+func WithResponseLength(s int64) StatsOption {
+	return func(opt *stats.Options) {
+		opt.ResponseLength = s
+	}
+}
+
+func WithError(err error) StatsOption {
+	return func(opt *stats.Options) {
+		opt.Error = err
+	}
+}
+
 type Runner interface {
 	Host() string
 	ParsedOptions() *ParsedOptions
-	Report(requestType, name string, opts ...StatisticsOption)
+	Report(requestType, name string, opts ...StatsOption)
 	ReportException(err error)
 	SendMessage(typ string, data any) error
 }
@@ -46,7 +67,7 @@ type LoadRunner struct {
 	SendMessageFunc     func(typ string, data any) error
 
 	userSpawners map[string]*spawner.Spawner
-	statistics   *Statistics
+	statistics   *stats.Stats
 
 	host          atomic.Value
 	parsedOptions atomic.Pointer[ParsedOptions]
@@ -63,7 +84,7 @@ func NewLoadRunner() (*LoadRunner, error) {
 		SpawnMode: spawner.SpawnOnce,
 
 		userSpawners: map[string]*spawner.Spawner{},
-		statistics:   NewStatistics(),
+		statistics:   stats.New(),
 
 		messageHandlers: map[string][]MessageHandler{},
 	}, nil
@@ -187,8 +208,12 @@ func (l *LoadRunner) Users() map[string]int64 {
 	return ret
 }
 
-func (l *LoadRunner) Report(requestType, name string, opts ...StatisticsOption) {
-	l.statistics.Add(time.Now(), requestType, name, opts...)
+func (l *LoadRunner) Report(requestType, name string, opts ...StatsOption) {
+	var opt stats.Options
+	for _, f := range opts {
+		f(&opt)
+	}
+	l.statistics.Add(time.Now(), requestType, name, opt)
 }
 
 func (l *LoadRunner) ReportException(err error) {
@@ -197,6 +222,6 @@ func (l *LoadRunner) ReportException(err error) {
 	}
 }
 
-func (l *LoadRunner) FlushStats() (StatisticsEntries, *StatisticsEntry, StatisticsErrors) {
-	return l.statistics.Move()
+func (l *LoadRunner) FlushStats() (stats.Entries, *stats.Entry, stats.Errors) {
+	return l.statistics.Flush()
 }
