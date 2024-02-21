@@ -71,8 +71,12 @@ func (tq *taskQueue) Schedule(t Task, first bool) {
 
 func Run(ctx context.Context, t TaskSet, user launce.User) error {
 	var tq taskQueue
-	waiter := internal.Waiter{}
-	waiter.Init(t.WaitTime())
+
+	var waiter *internal.Waiter
+	if waitTimeFunc := t.WaitTime(); waitTimeFunc != nil {
+		waiter = &internal.Waiter{}
+		waiter.Init(waitTimeFunc)
+	}
 
 	if err := t.OnStart(ctx, &tq); err != nil {
 		if errors.Is(err, InterruptTaskSet) {
@@ -221,13 +225,11 @@ func unwrapTaskSet(task Task) TaskSet {
 	return nil
 }
 
-func wait(ctx context.Context, user launce.User, waiter internal.Waiter) error {
-	if user != nil {
-		if err := user.Wait(ctx); err == nil {
-			return nil
-		} else if !errors.Is(err, internal.ErrWaitFuncUndefined) {
-			return err
-		}
+func wait(ctx context.Context, user launce.User, waiter *internal.Waiter) error {
+	// TaskSet に WaitTimeFunc が設定されていればそれを使用して Wait
+	if waiter != nil {
+		return waiter.Wait(ctx)
 	}
-	return waiter.Wait(ctx)
+	// 指定されていなければ User の Wait を使用
+	return user.Wait(ctx)
 }
