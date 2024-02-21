@@ -22,27 +22,72 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qitoi/launce"
-	"github.com/qitoi/launce/internal/mock"
 	"github.com/qitoi/launce/spawner"
 )
 
-func Wait(ctx context.Context) error {
-	<-ctx.Done()
-	return ctx.Err()
+type SpawnTask struct {
+	started   int
+	startCond *sync.Cond
+	stopped   int
+	stopCond  *sync.Cond
 }
 
-func NewSpawner(f func(ctx context.Context, u *mock.User) error) (*spawner.Spawner, *mock.UserStats, *mock.UserController) {
-	gen, stats, uc := mock.UserGenerator(f)
-	return spawner.New(func(ctx context.Context) {
-		_ = launce.ProcessUser(ctx, gen())
-	}, spawner.SpawnOnce), stats, uc
+func NewSpawnTask() *SpawnTask {
+	return &SpawnTask{
+		startCond: sync.NewCond(&sync.Mutex{}),
+		stopCond:  sync.NewCond(&sync.Mutex{}),
+	}
+}
+
+func (s *SpawnTask) Run(ctx context.Context) {
+	s.startCond.L.Lock()
+	s.started += 1
+	s.startCond.Broadcast()
+	s.startCond.L.Unlock()
+
+	<-ctx.Done()
+
+	s.stopCond.L.Lock()
+	s.stopped += 1
+	s.stopCond.Broadcast()
+	s.stopCond.L.Unlock()
+}
+
+func (s *SpawnTask) Started() int {
+	s.startCond.L.Lock()
+	defer s.startCond.L.Unlock()
+	return s.started
+}
+
+func (s *SpawnTask) Stopped() int {
+	s.stopCond.L.Lock()
+	defer s.stopCond.L.Unlock()
+	return s.stopped
+}
+
+func (s *SpawnTask) WaitStart(n int) {
+	s.startCond.L.Lock()
+	for s.started < n {
+		s.startCond.Wait()
+	}
+	s.startCond.L.Unlock()
+}
+
+func (s *SpawnTask) WaitStop(n int) {
+	s.stopCond.L.Lock()
+	for s.stopped < n {
+		s.stopCond.Wait()
+	}
+	s.stopCond.L.Unlock()
+}
+
+func NewSpawner(mode spawner.SpawnMode) (*spawner.Spawner, *SpawnTask) {
+	st := NewSpawnTask()
+	return spawner.New(st.Run, mode), st
 }
 
 func TestSpawner_Start(t *testing.T) {
-	s, stats, _ := NewSpawner(func(ctx context.Context, u *mock.User) error {
-		return Wait(ctx)
-	})
+	s, st := NewSpawner(spawner.SpawnOnce)
 
 	s.Start()
 	defer func() {
@@ -52,328 +97,220 @@ func TestSpawner_Start(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	if n := stats.GetStarted(); n != 0 {
+	if n := st.Started(); n != 0 {
 		t.Fatalf("unexpected task run. got:%d want:%d", n, 0)
 	}
 }
 
 func TestSpawner_Cap_BeforeStart(t *testing.T) {
-	s, stats, uc := NewSpawner(func(ctx context.Context, u *mock.User) error {
-		return Wait(ctx)
-	})
+	s, st := NewSpawner(spawner.SpawnOnce)
 
 	s.Cap(3)
 	s.Start()
 
-	uc.WaitStart(3)
-	if n := stats.GetStarted(); n != 3 {
+	st.WaitStart(3)
+	if n := st.Started(); n != 3 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 3)
 	}
-	if n := stats.GetStopped(); n != 0 {
+	if n := st.Stopped(); n != 0 {
 		t.Fatalf("unexpected stopped user. got:%d want:%d", n, 0)
 	}
 
 	s.Stop()
 	s.StopAllUsers()
 
-	uc.WaitStop(3)
-	if n := stats.GetStarted(); n != 3 {
+	st.WaitStop(3)
+	if n := st.Started(); n != 3 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 3)
 	}
-	if n := stats.GetStopped(); n != 3 {
+	if n := st.Stopped(); n != 3 {
 		t.Fatalf("unexpected stopped user. got:%d want:%d", n, 3)
-	}
-	for id, c := range stats.GetLoop() {
-		if c != 1 {
-			t.Fatalf("unexpected task loop(%v). got:%d want:%d", id, c, 1)
-		}
 	}
 }
 
 func TestSpawner_Cap_AfterStart(t *testing.T) {
-	s, stats, uc := NewSpawner(func(ctx context.Context, u *mock.User) error {
-		return Wait(ctx)
-	})
+	s, st := NewSpawner(spawner.SpawnOnce)
 
 	s.Start()
 	s.Cap(3)
 
-	uc.WaitStart(3)
-	if n := stats.GetStarted(); n != 3 {
+	st.WaitStart(3)
+	if n := st.Started(); n != 3 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 3)
 	}
-	if n := stats.GetStopped(); n != 0 {
+	if n := st.Stopped(); n != 0 {
 		t.Fatalf("unexpected stopped user. got:%d want:%d", n, 0)
 	}
 
 	s.Stop()
 	s.StopAllUsers()
 
-	uc.WaitStop(3)
-	if n := stats.GetStarted(); n != 3 {
+	st.WaitStop(3)
+	if n := st.Started(); n != 3 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 3)
 	}
-	if n := stats.GetStopped(); n != 3 {
+	if n := st.Stopped(); n != 3 {
 		t.Fatalf("unexpected stopped user. got:%d want:%d", n, 3)
-	}
-	for id, c := range stats.GetLoop() {
-		if c != 1 {
-			t.Fatalf("unexpected task loop(%v). got:%d want:%d", id, c, 1)
-		}
 	}
 }
 
 func TestSpawner_Cap_Extension(t *testing.T) {
-	s, stats, uc := NewSpawner(func(ctx context.Context, u *mock.User) error {
-		return Wait(ctx)
-	})
+	s, st := NewSpawner(spawner.SpawnOnce)
 
 	s.Cap(3)
 	s.Start()
 
-	uc.WaitStart(3)
-	if n := stats.GetStarted(); n != 3 {
+	st.WaitStart(3)
+	if n := st.Started(); n != 3 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 3)
 	}
-	if n := stats.GetStopped(); n != 0 {
+	if n := st.Stopped(); n != 0 {
 		t.Fatalf("unexpected stopped user. got:%d want:%d", n, 0)
 	}
 
 	s.Cap(5)
 
-	uc.WaitStart(5)
-	if n := stats.GetStarted(); n != 5 {
+	st.WaitStart(5)
+	if n := st.Started(); n != 5 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 5)
 	}
-	if n := stats.GetStopped(); n != 0 {
+	if n := st.Stopped(); n != 0 {
 		t.Fatalf("unexpected stopped user. got:%d want:%d", n, 0)
 	}
 
 	s.Stop()
 	s.StopAllUsers()
 
-	uc.WaitStop(5)
-	if n := stats.GetStarted(); n != 5 {
+	st.WaitStop(5)
+	if n := st.Started(); n != 5 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 5)
 	}
-	if n := stats.GetStopped(); n != 5 {
+	if n := st.Stopped(); n != 5 {
 		t.Fatalf("unexpected stopped user. got:%d want:%d", n, 5)
-	}
-	for id, c := range stats.GetLoop() {
-		if c != 1 {
-			t.Fatalf("unexpected task loop(%v). got:%d want:%d", id, c, 1)
-		}
 	}
 }
 
 func TestSpawner_Cap_Shrink(t *testing.T) {
-	s, stats, uc := NewSpawner(func(ctx context.Context, u *mock.User) error {
-		return Wait(ctx)
-	})
+	s, st := NewSpawner(spawner.SpawnOnce)
 
 	s.Cap(3)
 	s.Start()
 
-	uc.WaitStart(3)
-	if n := stats.GetStarted(); n != 3 {
+	st.WaitStart(3)
+	if n := st.Started(); n != 3 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 3)
 	}
-	if n := stats.GetStopped(); n != 0 {
+	if n := st.Stopped(); n != 0 {
 		t.Fatalf("unexpected stopped user. got:%d want:%d", n, 0)
 	}
 
 	s.Cap(1)
 
-	uc.WaitStop(2)
-	if n := stats.GetStarted(); n != 3 {
+	st.WaitStop(2)
+	if n := st.Started(); n != 3 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 3)
 	}
-	if n := stats.GetStopped(); n != 2 {
+	if n := st.Stopped(); n != 2 {
 		t.Fatalf("unexpected stopped user. got:%d want:%d", n, 3)
 	}
 
 	s.Stop()
 	s.StopAllUsers()
 
-	uc.WaitStop(3)
-	if n := stats.GetStarted(); n != 3 {
+	st.WaitStop(3)
+	if n := st.Started(); n != 3 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 3)
 	}
-	if n := stats.GetStopped(); n != 3 {
+	if n := st.Stopped(); n != 3 {
 		t.Fatalf("unexpected stopped user. got:%d want:%d", n, 3)
-	}
-	for id, c := range stats.GetLoop() {
-		if c != 1 {
-			t.Fatalf("unexpected task loop(%v). got:%d want:%d", id, c, 1)
-		}
 	}
 }
 
 func TestSpawner_Cap_ShrinkMultiple(t *testing.T) {
-	s, stats, uc := NewSpawner(func(ctx context.Context, u *mock.User) error {
-		return Wait(ctx)
-	})
+	s, st := NewSpawner(spawner.SpawnOnce)
 
 	s.Cap(6)
 	s.Start()
 
-	uc.WaitStart(6)
-	if n := stats.GetStarted(); n != 6 {
+	st.WaitStart(6)
+	if n := st.Started(); n != 6 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 3)
 	}
-	if n := stats.GetStopped(); n != 0 {
+	if n := st.Stopped(); n != 0 {
 		t.Fatalf("unexpected stopped user. got:%d want:%d", n, 0)
 	}
 
 	s.Cap(5)
-	uc.WaitStop(1)
-	if n := stats.GetStarted(); n != 6 {
+	st.WaitStop(1)
+	if n := st.Started(); n != 6 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 6)
 	}
-	if n := stats.GetStopped(); n != 1 {
+	if n := st.Stopped(); n != 1 {
 		t.Fatalf("unexpected stopped user. got:%d want:%d", n, 1)
 	}
 
 	s.Cap(4)
-	uc.WaitStop(2)
-	if n := stats.GetStarted(); n != 6 {
+	st.WaitStop(2)
+	if n := st.Started(); n != 6 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 6)
 	}
-	if n := stats.GetStopped(); n != 2 {
+	if n := st.Stopped(); n != 2 {
 		t.Fatalf("unexpected stopped user. got:%d want:%d", n, 2)
 	}
 
 	s.Cap(2)
-	uc.WaitStop(2)
-	if n := stats.GetStarted(); n != 6 {
+	st.WaitStop(2)
+	if n := st.Started(); n != 6 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 6)
 	}
-	if n := stats.GetStopped(); n != 4 {
+	if n := st.Stopped(); n != 4 {
 		t.Fatalf("unexpected stopped user. got:%d want:%d", n, 4)
 	}
 
 	s.Stop()
 	s.StopAllUsers()
 
-	uc.WaitStop(6)
-	if n := stats.GetStarted(); n != 6 {
+	st.WaitStop(6)
+	if n := st.Started(); n != 6 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 6)
 	}
-	if n := stats.GetStopped(); n != 6 {
+	if n := st.Stopped(); n != 6 {
 		t.Fatalf("unexpected stopped user. got:%d want:%d", n, 6)
-	}
-	for id, c := range stats.GetLoop() {
-		if c != 1 {
-			t.Fatalf("unexpected task loop(%v). got:%d want:%d", id, c, 1)
-		}
 	}
 }
 
-func TestSpawner_Respawn_User(t *testing.T) {
-	gen, stats, uc := mock.UserGenerator(func(ctx context.Context, u *mock.User) error {
-		return Wait(ctx)
-	})
-	s := spawner.New(func(ctx context.Context) {
-		_ = launce.ProcessUser(ctx, gen())
-	}, spawner.SpawnPersistent)
+func TestSpawner_SpawnPersistent(t *testing.T) {
+	s, st := NewSpawner(spawner.SpawnPersistent)
 
 	s.Cap(1)
 	s.Start()
 
-	uc.WaitStart(1)
-	if n := stats.GetStarted(); n != 1 {
+	st.WaitStart(1)
+	if n := st.Started(); n != 1 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 1)
 	}
-	if n := stats.GetStopped(); n != 0 {
+	if n := st.Stopped(); n != 0 {
 		t.Fatalf("unexpected stopped user. got:%d want:%d", n, 0)
 	}
 
 	s.StopAllUsers()
 
-	uc.WaitStart(2)
-	if n := stats.GetStarted(); n != 2 {
+	st.WaitStart(2)
+	if n := st.Started(); n != 2 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 2)
 	}
-	if n := stats.GetStopped(); n != 1 {
+	if n := st.Stopped(); n != 1 {
 		t.Fatalf("unexpected stopped user. got:%d want:%d", n, 1)
 	}
 
 	s.Stop()
 	s.StopAllUsers()
 
-	uc.WaitStop(2)
-	if n := stats.GetStarted(); n != 2 {
+	st.WaitStop(2)
+	if n := st.Started(); n != 2 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 2)
 	}
-	if n := stats.GetStopped(); n != 2 {
+	if n := st.Stopped(); n != 2 {
 		t.Fatalf("unexpected stopped user. got:%d want:%d", n, 2)
-	}
-	for id, c := range stats.GetLoop() {
-		if c != 1 {
-			t.Fatalf("unexpected task loop(%v). got:%d want:%d", id, c, 1)
-		}
-	}
-}
-
-func TestSpawner_TaskLoop(t *testing.T) {
-	cond := sync.NewCond(&sync.Mutex{})
-	signalCount := int64(0)
-
-	s, stats, uc := NewSpawner(func(ctx context.Context, u *mock.User) error {
-		userTaskCount := u.Value
-
-		cond.L.Lock()
-		defer cond.L.Unlock()
-
-	loop:
-		for {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-				if signalCount > userTaskCount {
-					break loop
-				}
-			}
-			cond.Wait()
-		}
-		u.Value = signalCount
-
-		return nil
-	})
-
-	s.Cap(3)
-	s.Start()
-
-	uc.WaitStart(3)
-
-	// wait task loop: 1
-
-	cond.L.Lock()
-	signalCount += 1
-	cond.L.Unlock()
-	cond.Broadcast()
-
-	// wait task loop: 2
-
-	time.Sleep(100 * time.Millisecond)
-
-	s.Stop()
-	s.StopAllUsers()
-	cond.Broadcast()
-
-	// quit task loop: 2
-
-	uc.WaitStop(3)
-	if n := stats.GetStarted(); n != 3 {
-		t.Fatalf("unexpected started user. got:%d want:%d", n, 3)
-	}
-	if n := stats.GetStopped(); n != 3 {
-		t.Fatalf("unexpected stopped user. got:%d want:%d", n, 3)
-	}
-	for id, c := range stats.GetLoop() {
-		if c != 2 {
-			t.Fatalf("unexpected task loop(%v). got:%d want:%d", id, c, 2)
-		}
 	}
 }
