@@ -95,7 +95,7 @@ func NewWorker(transport Transport) (*Worker, error) {
 	if err != nil {
 		return nil, err
 	}
-	runner, err := New()
+	runner, err := NewLoadRunner()
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +103,7 @@ func NewWorker(transport Transport) (*Worker, error) {
 	if err != nil {
 		return nil, err
 	}
-	worker := &Worker{
+	w := &Worker{
 		Version:                "launce-0.0.1",
 		ClientID:               id,
 		HeartbeatInterval:      defaultHeartbeatInterval,
@@ -121,10 +121,10 @@ func NewWorker(transport Transport) (*Worker, error) {
 		procInfo:    procInfo,
 	}
 
-	worker.runner.SendMessageFunc = worker.SendMessage
-	worker.runner.ReportExceptionFunc = worker.reportException
+	w.runner.SendMessageFunc = w.SendMessage
+	w.runner.ReportExceptionFunc = w.reportException
 
-	return worker, nil
+	return w, nil
 }
 
 func (w *Worker) Join() error {

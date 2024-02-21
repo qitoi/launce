@@ -58,7 +58,7 @@ type LoadRunner struct {
 	cancelStart atomic.Value
 }
 
-func New() (*LoadRunner, error) {
+func NewLoadRunner() (*LoadRunner, error) {
 	return &LoadRunner{
 		SpawnMode: spawner.SpawnOnce,
 
