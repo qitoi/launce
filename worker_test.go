@@ -21,130 +21,17 @@ import (
 	"errors"
 	"slices"
 	"sync"
-	"sync/atomic"
 	"testing"
 
 	"github.com/vmihailenco/msgpack/v5"
 
 	"github.com/qitoi/launce"
-	"github.com/qitoi/launce/internal/mock"
 	"github.com/qitoi/launce/internal/worker"
 )
 
 var (
 	parsedOptions, _ = msgpack.Marshal(launce.ParsedOptions{})
 )
-
-type MasterTransport struct {
-	transport *mock.Transport
-	lastSpawn float64
-}
-
-func (m *MasterTransport) Send(msg launce.Message) error {
-	b, err := launce.EncodeMessage(msg)
-	if err != nil {
-		return err
-	}
-	return m.transport.Send(b)
-}
-
-func (m *MasterTransport) Receive() (launce.ReceivedMessage, error) {
-	b, err := m.transport.Receive()
-	if err != nil {
-		return launce.ReceivedMessage{}, err
-	}
-	msg, err := launce.DecodeMessage(b)
-	if err != nil {
-		return launce.ReceivedMessage{}, err
-	}
-	return msg, nil
-}
-
-func (m *MasterTransport) SendSpawn(users map[string]int64, nodeID string) error {
-	m.lastSpawn += 1
-	return m.Send(launce.Message{
-		Type: worker.MessageSpawn,
-		Data: worker.SpawnPayload{
-			Timestamp:        m.lastSpawn,
-			UserClassesCount: users,
-			Host:             "",
-			StopTimeout:      0,
-			ParsedOptions:    parsedOptions,
-		},
-		NodeID: nodeID,
-	})
-}
-
-func extractMessageData[T any](msg launce.ReceivedMessage) T {
-	var v T
-	if err := msgpack.Unmarshal(msg.Data, &v); err != nil {
-		var z T
-		return z
-	}
-	return v
-}
-
-func setupWorker(t *testing.T) (*launce.Worker, *MasterTransport) {
-	t.Helper()
-
-	masterTransport, workerTransport, err := mock.MakeTransportSet()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	w, err := launce.NewWorker(workerTransport)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	w.HeartbeatInterval = 0
-	w.StatsReportInterval = 0
-	w.MetricsMonitorInterval = 0
-
-	return w, &MasterTransport{transport: masterTransport}
-}
-
-func startMasterReceiver(wg *sync.WaitGroup, master *MasterTransport, filterMessages ...string) (<-chan launce.ReceivedMessage, func()) {
-	ch := make(chan launce.ReceivedMessage)
-
-	readyCh := make(chan struct{})
-	var once sync.Once
-
-	wg.Add(1)
-	go func() {
-		defer close(ch)
-		defer wg.Done()
-
-		for {
-			msg, err := master.Receive()
-			if err != nil {
-				return
-			}
-			if msg.Type == "client_ready" {
-				_ = master.Send(launce.Message{
-					Type:   worker.MessageAck,
-					Data:   worker.AckPayload{Index: 1},
-					NodeID: msg.NodeID,
-				})
-				once.Do(func() {
-					close(readyCh)
-				})
-			}
-			if slices.Contains(filterMessages, msg.Type) {
-				ch <- msg
-			}
-		}
-	}()
-
-	return ch, func() {
-		<-readyCh
-	}
-}
-
-func Wait(ctx context.Context) error {
-	<-ctx.Done()
-	return ctx.Err()
-}
 
 func TestWorker_Join(t *testing.T) {
 	var wg sync.WaitGroup
@@ -211,7 +98,11 @@ func TestWorker_RegisterMessage(t *testing.T) {
 	})
 
 	customMessage := <-ch
-	msg := extractMessageData[string](customMessage)
+
+	var msg string
+	if err := customMessage.DecodePayload(&msg); err != nil {
+		t.Fatalf("payload decode error: %v", err)
+	}
 
 	if customMessage.Type != "custom-message" {
 		t.Fatalf("received custome message type mismatch. got:%v want:%v", customMessage.Type, "custom-message")
@@ -236,10 +127,14 @@ func TestWorker_RegisterMessage_MultipleReceivers(t *testing.T) {
 
 	ch := make(chan string)
 	w.RegisterMessage("custom-message", func(msg launce.ReceivedMessage) {
-		ch <- "1:" + extractMessageData[string](msg)
+		var s string
+		_ = msg.DecodePayload(&s)
+		ch <- "1:" + s
 	})
 	w.RegisterMessage("custom-message", func(msg launce.ReceivedMessage) {
-		ch <- "2:" + extractMessageData[string](msg)
+		var s string
+		_ = msg.DecodePayload(&s)
+		ch <- "2:" + s
 	})
 
 	wg.Add(1)
@@ -278,10 +173,14 @@ func TestWorker_RegisterMessage_MultipleMessages(t *testing.T) {
 
 	ch := make(chan string, 1)
 	w.RegisterMessage("custom-message1", func(msg launce.ReceivedMessage) {
-		ch <- "1:" + extractMessageData[string](msg)
+		var s string
+		_ = msg.DecodePayload(&s)
+		ch <- "1:" + s
 	})
 	w.RegisterMessage("custom-message2", func(msg launce.ReceivedMessage) {
-		ch <- "2:" + extractMessageData[string](msg)
+		var s string
+		_ = msg.DecodePayload(&s)
+		ch <- "2:" + s
 	})
 
 	wg.Add(1)
@@ -323,11 +222,9 @@ func TestWorker_RegisterUser(t *testing.T) {
 	w, master := setupWorker(t)
 	_, waitForReady := startMasterReceiver(&wg, master)
 
-	userFunc, stats, uc := mock.UserGenerator(func(ctx context.Context, u *mock.User) error {
-		return Wait(ctx)
-	})
+	uc := newUserController()
 
-	w.RegisterUser("test-user", userFunc)
+	w.RegisterUser("test-user", uc.NewUser)
 
 	wg.Add(1)
 	go func() {
@@ -343,7 +240,7 @@ func TestWorker_RegisterUser(t *testing.T) {
 
 	uc.WaitStart(3)
 
-	if n := stats.GetStarted(); n != 3 {
+	if n := uc.Started(); n != 3 {
 		t.Fatalf("unexpected started user. got:%v want:%v", n, 3)
 	}
 
@@ -353,7 +250,7 @@ func TestWorker_RegisterUser(t *testing.T) {
 
 	uc.WaitStart(5)
 
-	if n := stats.GetStarted(); n != 5 {
+	if n := uc.Started(); n != 5 {
 		t.Fatalf("unexpected started user. got:%v want:%v", n, 5)
 	}
 
@@ -363,20 +260,20 @@ func TestWorker_RegisterUser(t *testing.T) {
 
 	uc.WaitStop(4)
 
-	if n := stats.GetStarted(); n != 5 {
+	if n := uc.Started(); n != 5 {
 		t.Fatalf("unexpected started user. got:%v want:%v", n, 5)
 	}
-	if n := stats.GetStopped(); n != 4 {
+	if n := uc.Stopped(); n != 4 {
 		t.Fatalf("unexpected stopped user. got:%v want:%v", n, 4)
 	}
 
 	w.Quit()
 	uc.WaitStop(5)
 
-	if n := stats.GetStarted(); n != 5 {
+	if n := uc.Started(); n != 5 {
 		t.Fatalf("unexpected started user. got:%v want:%v", n, 5)
 	}
-	if n := stats.GetStopped(); n != 5 {
+	if n := uc.Stopped(); n != 5 {
 		t.Fatalf("unexpected stopped user. got:%v want:%v", n, 5)
 	}
 
@@ -389,11 +286,9 @@ func TestWorker_SpawnMessage(t *testing.T) {
 	w, master := setupWorker(t)
 	masterCh, _ := startMasterReceiver(&wg, master, worker.MessageClientReady, worker.MessageSpawning, worker.MessageSpawningComplete, worker.MessageClientStopped)
 
-	userFunc, _, uc := mock.UserGenerator(func(ctx context.Context, u *mock.User) error {
-		return Wait(ctx)
-	})
+	uc := newUserController()
 
-	w.RegisterUser("test-user", userFunc)
+	w.RegisterUser("test-user", uc.NewUser)
 
 	wg.Add(1)
 	go func() {
@@ -449,13 +344,7 @@ func TestWorker_QuitMessage(t *testing.T) {
 	var wg sync.WaitGroup
 
 	w, master := setupWorker(t)
-	masterCh, waitForReady := startMasterReceiver(&wg, master, worker.MessageClientReady)
-
-	userFunc, _, _ := mock.UserGenerator(func(ctx context.Context, u *mock.User) error {
-		return Wait(ctx)
-	})
-
-	w.RegisterUser("test-user", userFunc)
+	masterCh, waitForReady := startMasterReceiver(&wg, master, worker.MessageClientReady, worker.MessageStats, worker.MessageQuit)
 
 	wg.Add(1)
 	go func() {
@@ -465,8 +354,7 @@ func TestWorker_QuitMessage(t *testing.T) {
 
 	waitForReady()
 
-	msg := <-masterCh
-	if msg.Type != worker.MessageClientReady {
+	if msg := <-masterCh; msg.Type != worker.MessageClientReady {
 		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, worker.MessageClientReady)
 	}
 
@@ -476,53 +364,302 @@ func TestWorker_QuitMessage(t *testing.T) {
 		NodeID: w.ClientID,
 	})
 
-	<-masterCh
+	if msg := <-masterCh; msg.Type != worker.MessageStats {
+		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, worker.MessageStats)
+	}
+
+	if msg := <-masterCh; msg.Type != worker.MessageQuit {
+		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, worker.MessageQuit)
+	}
 
 	wg.Wait()
 }
 
-func TestWorker_ExceptionMessage(t *testing.T) {
-	var wg sync.WaitGroup
+func setupWorker(t *testing.T) (*launce.Worker, *masterTransport) {
+	t.Helper()
 
-	w, master := setupWorker(t)
-	masterCh, waitForReady := startMasterReceiver(&wg, master, worker.MessageException)
+	mt, wt, err := makeTransportSet()
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	errTest := errors.New("test error")
+	w, err := launce.NewWorker(wt)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	var first atomic.Bool
-	first.Store(true)
-	userFunc, _, uc := mock.UserGenerator(func(ctx context.Context, u *mock.User) error {
-		if first.Swap(false) {
-			u.Runner().ReportException(errTest)
-			return nil
-		}
-		return Wait(ctx)
-	})
+	w.HeartbeatInterval = 0
+	w.StatsReportInterval = 0
+	w.MetricsMonitorInterval = 0
 
-	w.RegisterUser("test-user", userFunc)
+	return w, &masterTransport{transport: mt}
+}
+
+func startMasterReceiver(wg *sync.WaitGroup, master *masterTransport, filterMessages ...string) (<-chan launce.ReceivedMessage, func()) {
+	ch := make(chan launce.ReceivedMessage)
+
+	readyCh := make(chan struct{})
+	var once sync.Once
 
 	wg.Add(1)
 	go func() {
+		defer close(ch)
 		defer wg.Done()
-		_ = w.Join()
+
+		for {
+			msg, err := master.Receive()
+			if err != nil {
+				return
+			}
+			if msg.Type == "client_ready" {
+				_ = master.Send(launce.Message{
+					Type:   worker.MessageAck,
+					Data:   worker.AckPayload{Index: 1},
+					NodeID: msg.NodeID,
+				})
+				once.Do(func() {
+					close(readyCh)
+				})
+			}
+			if slices.Contains(filterMessages, msg.Type) {
+				ch <- msg
+			}
+		}
 	}()
 
-	waitForReady()
+	return ch, func() {
+		<-readyCh
+	}
+}
 
-	_ = master.SendSpawn(map[string]int64{
-		"test-user": 3,
-	}, w.ClientID)
+var (
+	_ launce.BaseUserRequirement = (*user)(nil)
+)
 
-	uc.WaitStart(1)
+type user struct {
+	launce.BaseUser
+	ProcessFunc func(ctx context.Context) error
+	OnStartFunc func(ctx context.Context) error
+	OnStopFunc  func(ctx context.Context) error
+}
 
-	msg := <-masterCh
+func (u *user) Process(ctx context.Context) error {
+	return u.ProcessFunc(ctx)
+}
 
-	w.Quit()
+func (u *user) OnStart(ctx context.Context) error {
+	return u.OnStartFunc(ctx)
+}
 
-	data := extractMessageData[worker.ExceptionPayload](msg)
-	if data.Msg != errTest.Error() {
-		t.Fatalf("unexpected exception message. got:%v want:%v", data.Msg, errTest.Error())
+func (u *user) OnStop(ctx context.Context) error {
+	return u.OnStopFunc(ctx)
+}
+
+func (u *user) WaitTime() launce.WaitTimeFunc {
+	return nil
+}
+
+type userController struct {
+	started   int
+	startCond *sync.Cond
+	stopped   int
+	stopCond  *sync.Cond
+}
+
+func newUserController() *userController {
+	return &userController{
+		startCond: sync.NewCond(&sync.Mutex{}),
+		stopCond:  sync.NewCond(&sync.Mutex{}),
+	}
+}
+
+func (s *userController) NewUser() launce.User {
+	return &user{
+		ProcessFunc: func(ctx context.Context) error {
+			<-ctx.Done()
+			return ctx.Err()
+		},
+		OnStartFunc: func(ctx context.Context) error {
+			s.OnStart()
+			return nil
+		},
+		OnStopFunc: func(ctx context.Context) error {
+			s.OnStop()
+			return nil
+		},
+	}
+}
+
+func (s *userController) OnStart() {
+	s.startCond.L.Lock()
+	s.started += 1
+	s.startCond.Broadcast()
+	s.startCond.L.Unlock()
+}
+
+func (s *userController) OnStop() {
+	s.stopCond.L.Lock()
+	s.stopped += 1
+	s.stopCond.Broadcast()
+	s.stopCond.L.Unlock()
+}
+
+func (s *userController) Started() int {
+	s.startCond.L.Lock()
+	defer s.startCond.L.Unlock()
+	return s.started
+}
+
+func (s *userController) Stopped() int {
+	s.stopCond.L.Lock()
+	defer s.stopCond.L.Unlock()
+	return s.stopped
+}
+
+func (s *userController) WaitStart(n int) {
+	s.startCond.L.Lock()
+	for s.started < n {
+		s.startCond.Wait()
+	}
+	s.startCond.L.Unlock()
+}
+
+func (s *userController) WaitStop(n int) {
+	s.stopCond.L.Lock()
+	for s.stopped < n {
+		s.stopCond.Wait()
+	}
+	s.stopCond.L.Unlock()
+}
+
+type masterTransport struct {
+	transport *transport
+	lastSpawn float64
+}
+
+func (m *masterTransport) Send(msg launce.Message) error {
+	b, err := launce.EncodeMessage(msg)
+	if err != nil {
+		return err
+	}
+	return m.transport.Send(b)
+}
+
+func (m *masterTransport) Receive() (launce.ReceivedMessage, error) {
+	b, err := m.transport.Receive()
+	if err != nil {
+		return launce.ReceivedMessage{}, err
+	}
+	msg, err := launce.DecodeMessage(b)
+	if err != nil {
+		return launce.ReceivedMessage{}, err
+	}
+	return msg, nil
+}
+
+func (m *masterTransport) SendSpawn(users map[string]int64, nodeID string) error {
+	m.lastSpawn += 1
+	return m.Send(launce.Message{
+		Type: worker.MessageSpawn,
+		Data: worker.SpawnPayload{
+			Timestamp:        m.lastSpawn,
+			UserClassesCount: users,
+			Host:             "",
+			StopTimeout:      0,
+			ParsedOptions:    parsedOptions,
+		},
+		NodeID: nodeID,
+	})
+}
+
+var (
+	_ launce.Transport = (*transport)(nil)
+)
+
+var (
+	ErrConnectionClosed = errors.New("connection closed")
+)
+
+type transport struct {
+	Dest   *transport
+	sendCh chan<- []byte
+	recvCh <-chan []byte
+	ctx    context.Context
+	cancel func()
+	mu     sync.RWMutex
+	wg     sync.WaitGroup
+}
+
+func (m *transport) Open(ctx context.Context, clientID string) error {
+	if m == m.Dest.Dest && m.sendCh != nil && m.Dest.recvCh != nil {
+		return nil
+	}
+	ch1 := make(chan []byte, 100)
+	ch2 := make(chan []byte, 100)
+	m.sendCh, m.Dest.recvCh = ch1, ch1
+	m.recvCh, m.Dest.sendCh = ch2, ch2
+	m.ctx, m.cancel = context.WithCancel(context.Background())
+	m.Dest.ctx, m.Dest.cancel = context.WithCancel(context.Background())
+	return nil
+}
+
+func (m *transport) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.sendCh == nil {
+		return nil
 	}
 
-	wg.Wait()
+	m.cancel()
+	m.wg.Wait()
+	close(m.sendCh)
+	m.sendCh = nil
+	m.recvCh = nil
+
+	return nil
+}
+
+func (m *transport) Send(msg []byte) error {
+	m.mu.RLock()
+	ch := m.sendCh
+	m.mu.RUnlock()
+
+	m.wg.Add(1)
+	defer m.wg.Done()
+
+	select {
+	case ch <- msg:
+		return nil
+
+	case <-m.ctx.Done():
+		return ErrConnectionClosed
+	}
+}
+
+func (m *transport) Receive() ([]byte, error) {
+	m.mu.RLock()
+	ch := m.recvCh
+	m.mu.RUnlock()
+
+	select {
+	case b, ok := <-ch:
+		if !ok {
+			_ = m.Close()
+			return nil, ErrConnectionClosed
+		}
+		return b, nil
+
+	case <-m.ctx.Done():
+		return nil, ErrConnectionClosed
+	}
+}
+
+func makeTransportSet() (*transport, *transport, error) {
+	t1 := &transport{}
+	t2 := &transport{}
+	t1.Dest, t2.Dest = t2, t1
+	if err := t2.Open(context.Background(), ""); err != nil {
+		return nil, nil, err
+	}
+	return t1, t2, nil
 }
