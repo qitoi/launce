@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-package worker
+package launce
 
 import (
 	"math"
@@ -23,25 +23,25 @@ import (
 	"github.com/shirou/gopsutil/process"
 )
 
-type ProcessInfo struct {
+type processInfo struct {
 	proc        *process.Process
 	cpuUsage    uint64
 	memoryUsage uint64
 }
 
-func NewProcessInfo(pid int) (*ProcessInfo, error) {
+func newProcessInfo(pid int) (*processInfo, error) {
 	proc, err := process.NewProcess(int32(pid))
 	if err != nil {
 		return nil, err
 	}
-	return &ProcessInfo{
+	return &processInfo{
 		proc:        proc,
 		cpuUsage:    0,
 		memoryUsage: 0,
 	}, nil
 }
 
-func (p *ProcessInfo) Update() error {
+func (p *processInfo) Update() error {
 	mem, err := p.proc.MemoryInfo()
 	if err != nil {
 		return err
@@ -57,10 +57,10 @@ func (p *ProcessInfo) Update() error {
 	return nil
 }
 
-func (p *ProcessInfo) CPUUsage() float64 {
+func (p *processInfo) CPUUsage() float64 {
 	return math.Float64frombits(atomic.LoadUint64(&p.cpuUsage))
 }
 
-func (p *ProcessInfo) MemoryUsage() uint64 {
+func (p *processInfo) MemoryUsage() uint64 {
 	return atomic.LoadUint64(&p.memoryUsage)
 }

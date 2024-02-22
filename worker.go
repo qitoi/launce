@@ -26,7 +26,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/qitoi/launce/internal/worker"
 	"github.com/qitoi/launce/stats"
 )
 
@@ -88,7 +87,7 @@ type Worker struct {
 	spawnCh     chan map[string]int64
 	ackCh       chan struct{}
 	heartbeatCh chan struct{}
-	procInfo    *worker.ProcessInfo
+	procInfo    *processInfo
 }
 
 func NewWorker(transport Transport) (*Worker, error) {
@@ -100,7 +99,7 @@ func NewWorker(transport Transport) (*Worker, error) {
 	if err != nil {
 		return nil, err
 	}
-	procInfo, err := worker.NewProcessInfo(os.Getpid())
+	procInfo, err := newProcessInfo(os.Getpid())
 	if err != nil {
 		return nil, err
 	}
