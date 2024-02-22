@@ -16,10 +16,18 @@
 
 package launce
 
+import (
+	"context"
+)
+
 func EncodeMessage(msg Message) ([]byte, error) {
 	return encodeMessage(msg)
 }
 
 func DecodeMessage(data []byte) (ReceivedMessage, error) {
 	return decodeMessage(data)
+}
+
+func ProcessUser(ctx context.Context, user User) error {
+	return processUser(ctx, user)
 }

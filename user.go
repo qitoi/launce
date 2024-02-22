@@ -73,7 +73,7 @@ func (b *BaseUser) OnStop(ctx context.Context) error {
 	return nil
 }
 
-func ProcessUser(ctx context.Context, user User) error {
+func processUser(ctx context.Context, user User) error {
 	if err := user.OnStart(ctx); err != nil {
 		if !errors.Is(err, context.Canceled) && !errors.Is(err, StopUser) {
 			// unexpected error
