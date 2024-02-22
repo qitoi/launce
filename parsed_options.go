@@ -20,7 +20,9 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-type parsedOptionsKey struct{}
+var (
+	_ msgpack.CustomDecoder = (*ParsedOptions)(nil)
+)
 
 type ParsedOptions struct {
 	// Common Options
@@ -98,18 +100,27 @@ type ParsedOptions struct {
 
 	UserClasses []string `msgpack:"user_classes"` // <UserClass1 UserClass2>
 
-	buf []byte `msgpack:"-"`
+	raw msgpack.RawMessage `msgpack:"-"`
 }
 
-func NewParsedOptions(buf []byte) (*ParsedOptions, error) {
-	var opt ParsedOptions
-	if err := msgpack.Unmarshal(buf, &opt); err != nil {
-		return nil, err
+func (p *ParsedOptions) DecodeMsgpack(dec *msgpack.Decoder) error {
+	// avoid unmarshal infinite loop
+	type parsedOptions ParsedOptions
+	tp := (*parsedOptions)(p)
+
+	raw, err := dec.DecodeRaw()
+	if err != nil {
+		return err
 	}
-	opt.buf = buf
-	return &opt, nil
+	if err := msgpack.Unmarshal(raw, tp); err != nil {
+		return err
+	}
+
+	p.raw = raw
+
+	return nil
 }
 
-func (p *ParsedOptions) Decode(v interface{}) error {
-	return msgpack.Unmarshal(p.buf, v)
+func (p *ParsedOptions) Extract(v interface{}) error {
+	return msgpack.Unmarshal(p.raw, v)
 }

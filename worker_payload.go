@@ -14,54 +14,50 @@
  *  limitations under the License.
  */
 
-package worker
-
-import (
-	"github.com/vmihailenco/msgpack/v5"
-)
+package launce
 
 const (
 	// message type
 
-	MessageHeartbeat = "heartbeat"
-	MessageQuit      = "quit"
+	messageHeartbeat = "heartbeat"
+	messageQuit      = "quit"
 
 	// master to worker message type
 
-	MessageAck       = "ack"
-	MessageSpawn     = "spawn"
-	MessageStop      = "stop"
-	MessageReconnect = "reconnect"
+	messageAck       = "ack"
+	messageSpawn     = "spawn"
+	messageStop      = "stop"
+	messageReconnect = "reconnect"
 
 	// worker to master message type
 
-	MessageClientReady      = "client_ready"
-	MessageClientStopped    = "client_stopped"
-	MessageSpawning         = "spawning"
-	MessageSpawningComplete = "spawning_complete"
-	MessageStats            = "stats"
-	MessageException        = "exception"
+	messageClientReady      = "client_ready"
+	messageClientStopped    = "client_stopped"
+	messageSpawning         = "spawning"
+	messageSpawningComplete = "spawning_complete"
+	messageStats            = "stats"
+	messageException        = "exception"
 )
 
-type AckPayload struct {
+type ackPayload struct {
 	Index int64 `msgpack:"index"`
 }
 
-type SpawnPayload struct {
-	Timestamp        float64            `msgpack:"timestamp"`
-	UserClassesCount map[string]int64   `msgpack:"user_classes_count"`
-	Host             string             `msgpack:"host"`
-	StopTimeout      float64            `msgpack:"stop_timeout"`
-	ParsedOptions    msgpack.RawMessage `msgpack:"parsed_options"`
+type spawnPayload struct {
+	Timestamp        float64          `msgpack:"timestamp"`
+	UserClassesCount map[string]int64 `msgpack:"user_classes_count"`
+	Host             string           `msgpack:"host"`
+	StopTimeout      float64          `msgpack:"stop_timeout"`
+	ParsedOptions    ParsedOptions    `msgpack:"parsed_options"`
 }
 
-type HeartbeatPayload struct {
+type heartbeatPayload struct {
 	State              string  `msgpack:"state"`
 	CurrentCPUUsage    float64 `msgpack:"current_cpu_usage"`
 	CurrentMemoryUsage uint64  `msgpack:"current_memory_usage"`
 }
 
-type StatsPayloadEntry struct {
+type statsPayloadEntry struct {
 	Name                 string          `msgpack:"name"`
 	Method               string          `msgpack:"method"`
 	LastRequestTimestamp float64         `msgpack:"last_request_timestamp"`
@@ -78,27 +74,27 @@ type StatsPayloadEntry struct {
 	NumFailPerSec        map[int64]int64 `msgpack:"num_fail_per_sec"`
 }
 
-type StatsPayloadError struct {
+type statsPayloadError struct {
 	Name        string `msgpack:"name"`
 	Method      string `msgpack:"method"`
 	Error       string `msgpack:"error"`
 	Occurrences int64  `msgpack:"occurrences"`
 }
 
-type StatsPayload struct {
-	Stats            []*StatsPayloadEntry          `msgpack:"stats"`
-	StatsTotal       *StatsPayloadEntry            `msgpack:"stats_total"`
-	Errors           map[string]*StatsPayloadError `msgpack:"errors"`
+type statsPayload struct {
+	Stats            []*statsPayloadEntry          `msgpack:"stats"`
+	StatsTotal       *statsPayloadEntry            `msgpack:"stats_total"`
+	Errors           map[string]*statsPayloadError `msgpack:"errors"`
 	UserClassesCount map[string]int64              `msgpack:"user_classes_count"`
 	UserCount        int64                         `msgpack:"user_count"`
 }
 
-type ExceptionPayload struct {
+type exceptionPayload struct {
 	Msg       string `msgpack:"msg"`
 	Traceback string `msgpack:"traceback"`
 }
 
-type SpawningCompletePayload struct {
+type spawningCompletePayload struct {
 	UserClassesCount map[string]int64 `msgpack:"user_classes_count"`
 	UserCount        int64            `msgpack:"user_count"`
 }

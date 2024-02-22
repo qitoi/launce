@@ -31,3 +31,29 @@ func DecodeMessage(data []byte) (ReceivedMessage, error) {
 func ProcessUser(ctx context.Context, user User) error {
 	return processUser(ctx, user)
 }
+
+const (
+	MessageHeartbeat        = messageHeartbeat
+	MessageQuit             = messageQuit
+	MessageAck              = messageAck
+	MessageSpawn            = messageSpawn
+	MessageStop             = messageStop
+	MessageReconnect        = messageReconnect
+	MessageClientReady      = messageClientReady
+	MessageClientStopped    = messageClientStopped
+	MessageSpawning         = messageSpawning
+	MessageSpawningComplete = messageSpawningComplete
+	MessageStats            = messageStats
+	MessageException        = messageException
+)
+
+type (
+	AckPayload              = ackPayload
+	SpawnPayload            = spawnPayload
+	HeartbeatPayload        = heartbeatPayload
+	StatsPayloadEntry       = statsPayloadEntry
+	StatsPayloadError       = statsPayloadError
+	StatsPayload            = statsPayload
+	ExceptionPayload        = exceptionPayload
+	SpawningCompletePayload = spawningCompletePayload
+)

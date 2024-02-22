@@ -23,14 +23,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/vmihailenco/msgpack/v5"
-
 	"github.com/qitoi/launce"
-	"github.com/qitoi/launce/internal/worker"
 )
 
 var (
-	parsedOptions, _ = msgpack.Marshal(launce.ParsedOptions{})
+	parsedOptions = launce.ParsedOptions{}
 )
 
 func TestWorker_Join(t *testing.T) {
@@ -284,7 +281,7 @@ func TestWorker_SpawnMessage(t *testing.T) {
 	var wg sync.WaitGroup
 
 	w, master := setupWorker(t)
-	masterCh, _ := startMasterReceiver(&wg, master, worker.MessageClientReady, worker.MessageSpawning, worker.MessageSpawningComplete, worker.MessageClientStopped)
+	masterCh, _ := startMasterReceiver(&wg, master, launce.MessageClientReady, launce.MessageSpawning, launce.MessageSpawningComplete, launce.MessageClientStopped)
 
 	uc := newUserController()
 
@@ -297,8 +294,8 @@ func TestWorker_SpawnMessage(t *testing.T) {
 	}()
 
 	msg := <-masterCh
-	if msg.Type != worker.MessageClientReady {
-		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, worker.MessageClientReady)
+	if msg.Type != launce.MessageClientReady {
+		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageClientReady)
 	}
 
 	_ = master.SendSpawn(map[string]int64{
@@ -306,33 +303,33 @@ func TestWorker_SpawnMessage(t *testing.T) {
 	}, w.ClientID)
 
 	msg = <-masterCh
-	if msg.Type != worker.MessageSpawning {
-		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, worker.MessageSpawning)
+	if msg.Type != launce.MessageSpawning {
+		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageSpawning)
 	}
 
 	msg = <-masterCh
-	if msg.Type != worker.MessageSpawningComplete {
-		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, worker.MessageSpawningComplete)
+	if msg.Type != launce.MessageSpawningComplete {
+		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageSpawningComplete)
 	}
 
 	uc.WaitStart(3)
 
 	_ = master.Send(launce.Message{
-		Type:   worker.MessageStop,
+		Type:   launce.MessageStop,
 		Data:   nil,
 		NodeID: w.ClientID,
 	})
 
 	msg = <-masterCh
-	if msg.Type != worker.MessageClientStopped {
-		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, worker.MessageClientStopped)
+	if msg.Type != launce.MessageClientStopped {
+		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageClientStopped)
 	}
 
 	uc.WaitStop(3)
 
 	msg = <-masterCh
-	if msg.Type != worker.MessageClientReady {
-		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, worker.MessageClientReady)
+	if msg.Type != launce.MessageClientReady {
+		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageClientReady)
 	}
 
 	w.Quit()
@@ -344,7 +341,7 @@ func TestWorker_QuitMessage(t *testing.T) {
 	var wg sync.WaitGroup
 
 	w, master := setupWorker(t)
-	masterCh, waitForReady := startMasterReceiver(&wg, master, worker.MessageClientReady, worker.MessageStats, worker.MessageQuit)
+	masterCh, waitForReady := startMasterReceiver(&wg, master, launce.MessageClientReady, launce.MessageStats, launce.MessageQuit)
 
 	wg.Add(1)
 	go func() {
@@ -354,22 +351,22 @@ func TestWorker_QuitMessage(t *testing.T) {
 
 	waitForReady()
 
-	if msg := <-masterCh; msg.Type != worker.MessageClientReady {
-		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, worker.MessageClientReady)
+	if msg := <-masterCh; msg.Type != launce.MessageClientReady {
+		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageClientReady)
 	}
 
 	_ = master.Send(launce.Message{
-		Type:   worker.MessageQuit,
+		Type:   launce.MessageQuit,
 		Data:   nil,
 		NodeID: w.ClientID,
 	})
 
-	if msg := <-masterCh; msg.Type != worker.MessageStats {
-		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, worker.MessageStats)
+	if msg := <-masterCh; msg.Type != launce.MessageStats {
+		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageStats)
 	}
 
-	if msg := <-masterCh; msg.Type != worker.MessageQuit {
-		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, worker.MessageQuit)
+	if msg := <-masterCh; msg.Type != launce.MessageQuit {
+		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageQuit)
 	}
 
 	wg.Wait()
@@ -413,8 +410,8 @@ func startMasterReceiver(wg *sync.WaitGroup, master *masterTransport, filterMess
 			}
 			if msg.Type == "client_ready" {
 				_ = master.Send(launce.Message{
-					Type:   worker.MessageAck,
-					Data:   worker.AckPayload{Index: 1},
+					Type:   launce.MessageAck,
+					Data:   launce.AckPayload{Index: 1},
 					NodeID: msg.NodeID,
 				})
 				once.Do(func() {
@@ -560,8 +557,8 @@ func (m *masterTransport) Receive() (launce.ReceivedMessage, error) {
 func (m *masterTransport) SendSpawn(users map[string]int64, nodeID string) error {
 	m.lastSpawn += 1
 	return m.Send(launce.Message{
-		Type: worker.MessageSpawn,
-		Data: worker.SpawnPayload{
+		Type: launce.MessageSpawn,
+		Data: launce.SpawnPayload{
 			Timestamp:        m.lastSpawn,
 			UserClassesCount: users,
 			Host:             "",
