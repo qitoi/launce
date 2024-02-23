@@ -87,7 +87,7 @@ type LoadRunner struct {
 	cancelStart atomic.Value
 }
 
-func NewLoadRunner() (*LoadRunner, error) {
+func NewLoadRunner() *LoadRunner {
 	return &LoadRunner{
 		SpawnMode: spawner.SpawnOnce,
 
@@ -95,7 +95,7 @@ func NewLoadRunner() (*LoadRunner, error) {
 		statistics:   stats.New(),
 
 		messageHandlers: map[string][]MessageHandler{},
-	}, nil
+	}
 }
 
 func (l *LoadRunner) Host() string {

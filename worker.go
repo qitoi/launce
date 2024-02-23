@@ -95,14 +95,11 @@ func NewWorker(transport Transport) (*Worker, error) {
 	if err != nil {
 		return nil, err
 	}
-	runner, err := NewLoadRunner()
-	if err != nil {
-		return nil, err
-	}
 	procInfo, err := newProcessInfo(os.Getpid())
 	if err != nil {
 		return nil, err
 	}
+
 	w := &Worker{
 		Version:                "launce-0.0.1",
 		ClientID:               id,
@@ -111,7 +108,7 @@ func NewWorker(transport Transport) (*Worker, error) {
 		StatsReportInterval:    defaultStatsReportInterval,
 		MasterHeartbeatTimeout: defaultMasterHeartbeatTimeout,
 
-		runner:      runner,
+		runner:      NewLoadRunner(),
 		index:       -1,
 		state:       WorkerStateInit,
 		transport:   transport,
