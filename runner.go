@@ -31,6 +31,14 @@ var (
 	_ Runner = (*LoadRunner)(nil)
 )
 
+type UnknownUserError struct {
+	User string
+}
+
+func (e *UnknownUserError) Error() string {
+	return fmt.Sprintf("unknown user %s", e.User)
+}
+
 type MessageHandler func(msg ReceivedMessage)
 
 type StatsOption func(opt *stats.Options)
@@ -190,7 +198,7 @@ func (l *LoadRunner) Spawn(user string, count int) error {
 		s.Cap(count)
 		return nil
 	}
-	return fmt.Errorf("unknown user spawn: %v, %v", user, count)
+	return &UnknownUserError{User: user}
 }
 
 func (l *LoadRunner) StopUsers() {
