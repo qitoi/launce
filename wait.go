@@ -21,6 +21,10 @@ import (
 	"time"
 )
 
+var (
+	nowFunc = time.Now
+)
+
 type WaitTimeFunc func() time.Duration
 
 func Between(min, max time.Duration) WaitTimeFunc {
@@ -36,12 +40,11 @@ func Constant(d time.Duration) WaitTimeFunc {
 }
 
 func ConstantPacing(d time.Duration) WaitTimeFunc {
-	var (
-		lastRun      time.Time
-		lastWaitTime time.Duration
-	)
+	var lastRun = nowFunc()
+	var lastWaitTime time.Duration
+
 	return func() time.Duration {
-		now := time.Now()
+		now := nowFunc()
 		runTime := now.Sub(lastRun) - lastWaitTime
 		lastWaitTime = max(0, d-runTime)
 		lastRun = now
