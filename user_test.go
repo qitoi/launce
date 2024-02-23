@@ -33,7 +33,6 @@ type testUser struct {
 	Start func(ctx context.Context) error
 	Stop  func(ctx context.Context) error
 	Func  func(ctx context.Context) error
-	Value int
 }
 
 func (t *testUser) WaitTime() launce.WaitTimeFunc {
