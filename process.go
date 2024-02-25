@@ -46,7 +46,7 @@ func (p *processInfo) Update() error {
 	if err != nil {
 		return err
 	}
-	cpu, err := p.proc.CPUPercent()
+	cpu, err := p.proc.Percent(0)
 	if err != nil {
 		return err
 	}
