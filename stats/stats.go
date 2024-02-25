@@ -148,9 +148,10 @@ func (e *Entry) Add(now time.Time, responseTime time.Duration, contentLength int
 	e.TotalContentLength += contentLength
 
 	if _, ok := e.NumRequestsPerSec[t]; !ok {
-		e.NumRequestsPerSec[t] = 0
+		e.NumRequestsPerSec[t] = 1
+	} else {
+		e.NumRequestsPerSec[t] += 1
 	}
-	e.NumRequestsPerSec[t] += 1
 
 	if err != nil {
 		e.NumFailures += 1
@@ -166,16 +167,18 @@ func (e *Entry) Merge(src *Entry) {
 	e.NumNoneRequests += src.NumNoneRequests
 	for k, v := range src.NumRequestsPerSec {
 		if _, ok := e.NumRequestsPerSec[k]; !ok {
-			e.NumRequestsPerSec[k] = 0
+			e.NumRequestsPerSec[k] = v
+		} else {
+			e.NumRequestsPerSec[k] += v
 		}
-		e.NumRequestsPerSec[k] += v
 	}
 	e.NumFailures += src.NumFailures
 	for k, v := range src.NumFailuresPerSec {
 		if _, ok := e.NumFailuresPerSec[k]; !ok {
-			e.NumFailuresPerSec[k] = 0
+			e.NumFailuresPerSec[k] = v
+		} else {
+			e.NumFailuresPerSec[k] += v
 		}
-		e.NumFailuresPerSec[k] += v
 	}
 	if e.LastRequestTimestamp < src.LastRequestTimestamp {
 		e.LastRequestTimestamp = src.LastRequestTimestamp
@@ -194,9 +197,10 @@ func (e *Entry) Merge(src *Entry) {
 	e.TotalContentLength += src.TotalContentLength
 	for k, v := range src.ResponseTimes {
 		if _, ok := e.ResponseTimes[k]; !ok {
-			e.ResponseTimes[k] = 0
+			e.ResponseTimes[k] = v
+		} else {
+			e.ResponseTimes[k] += v
 		}
-		e.ResponseTimes[k] += v
 	}
 }
 
