@@ -39,18 +39,8 @@ func parseTime(s string) time.Time {
 }
 
 func log(s *stats.Stats, typ, name, datetime string, duration int, size int64, err error) {
-	var opts stats.Options
-	if duration >= 0 {
-		opts.ResponseTime = ptr(time.Duration(duration) * time.Millisecond)
-	}
-	if size >= 0 {
-		opts.ResponseLength = size
-	}
-	if err != nil {
-		opts.Error = err
-	}
 	tm := parseTime(datetime)
-	s.Add(tm, typ, name, opts)
+	s.Add(tm, typ, name, size, duration, err)
 }
 
 func getStats() *stats.Stats {

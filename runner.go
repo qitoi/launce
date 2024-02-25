@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"sync/atomic"
-	"time"
 
 	"github.com/qitoi/launce/spawner"
 	"github.com/qitoi/launce/stats"
@@ -40,24 +39,6 @@ func (e *UnknownUserError) Error() string {
 }
 
 type MessageHandler func(msg ReceivedMessage)
-
-func WithResponseTime(d time.Duration) stats.Option {
-	return func(opt *stats.Options) {
-		opt.ResponseTime = &d
-	}
-}
-
-func WithResponseLength(s int64) stats.Option {
-	return func(opt *stats.Options) {
-		opt.ResponseLength = s
-	}
-}
-
-func WithError(err error) stats.Option {
-	return func(opt *stats.Options) {
-		opt.Error = err
-	}
-}
 
 type Runner interface {
 	Host() string

@@ -28,65 +28,6 @@ var (
 	unixTimeZero = time.Unix(0, 0)
 )
 
-type Reporter struct {
-	ch chan<- EntryRequest
-}
-
-func (r *Reporter) Init(statsCh chan<- *Stats) {
-	r.ch = r.start(statsCh)
-}
-
-func (r *Reporter) Close() {
-	close(r.ch)
-}
-
-func (r *Reporter) Report(requestType, name string, opts ...Option) {
-	var opt Options
-	for _, f := range opts {
-		f(&opt)
-	}
-	r.ch <- EntryRequest{
-		Now:         time.Now(),
-		RequestType: requestType,
-		Name:        name,
-		Options:     opt,
-	}
-}
-
-func (r *Reporter) start(statsCh chan<- *Stats) chan<- EntryRequest {
-	s := New()
-	ch := make(chan EntryRequest, 100)
-
-	go func() {
-		ticker := time.NewTicker(100 * time.Millisecond)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case e, ok := <-ch:
-				if !ok {
-					statsCh <- s
-					return
-				}
-				s.Add(e.Now, e.RequestType, e.Name, e.Options)
-
-			case <-ticker.C:
-				statsCh <- s
-				s = New()
-			}
-		}
-	}()
-
-	return ch
-}
-
-type EntryRequest struct {
-	Now         time.Time
-	RequestType string
-	Name        string
-	Options     Options
-}
-
 type Stats struct {
 	mu sync.Mutex
 
@@ -114,7 +55,7 @@ func (s *Stats) Clear() {
 	s.Errors = Errors{}
 }
 
-func (s *Stats) Add(now time.Time, requestType, name string, opts Options) {
+func (s *Stats) Add(now time.Time, requestType, name string, responseTime time.Duration, contentLength int64, err error) {
 	var key = EntryKey{
 		Method: requestType,
 		Name:   name,
@@ -122,10 +63,10 @@ func (s *Stats) Add(now time.Time, requestType, name string, opts Options) {
 	if _, ok := s.Entries[key]; !ok {
 		s.Entries[key] = newEntry()
 	}
-	s.Entries[key].Add(now, opts)
+	s.Entries[key].Add(now, responseTime, contentLength, err)
 
-	if opts.Error != nil {
-		s.Errors.Add(key.Method, key.Name, opts.Error)
+	if err != nil {
+		s.Errors.Add(key.Method, key.Name, err)
 	}
 }
 
@@ -177,7 +118,7 @@ type Entry struct {
 	ResponseTimes map[int64]int64
 }
 
-func (e *Entry) Add(now time.Time, opt Options) {
+func (e *Entry) Add(now time.Time, responseTime time.Duration, contentLength int64, err error) {
 	t := now.Unix()
 
 	if e.StartTime == unixTimeZero || e.StartTime.After(now) {
@@ -189,18 +130,17 @@ func (e *Entry) Add(now time.Time, opt Options) {
 
 	e.NumRequests += 1
 
-	if opt.ResponseTime == nil {
+	if responseTime < 0 {
 		e.NumNoneRequests += 1
 	} else {
-		respTime := *opt.ResponseTime
-		e.TotalResponseTime += respTime
+		e.TotalResponseTime += responseTime
 		if e.MinResponseTime == nil {
-			e.MinResponseTime = &respTime
-		} else if *e.MinResponseTime > respTime {
-			*e.MinResponseTime = respTime
+			e.MinResponseTime = &responseTime
+		} else if *e.MinResponseTime > responseTime {
+			*e.MinResponseTime = responseTime
 		}
-		e.MaxResponseTime = max(e.MaxResponseTime, respTime)
-		rounded := roundResponseTime(respTime)
+		e.MaxResponseTime = max(e.MaxResponseTime, responseTime)
+		rounded := roundResponseTime(responseTime)
 		if _, ok := e.ResponseTimes[rounded]; !ok {
 			e.ResponseTimes[rounded] = 1
 		} else {
@@ -208,14 +148,14 @@ func (e *Entry) Add(now time.Time, opt Options) {
 		}
 	}
 
-	e.TotalContentLength += opt.ResponseLength
+	e.TotalContentLength += contentLength
 
 	if _, ok := e.NumRequestsPerSec[t]; !ok {
 		e.NumRequestsPerSec[t] = 0
 	}
 	e.NumRequestsPerSec[t] += 1
 
-	if opt.Error != nil {
+	if err != nil {
 		e.NumFailures += 1
 		e.NumFailuresPerSec[t] += 1
 	}
@@ -308,14 +248,6 @@ func (e *Errors) Merge(src Errors) {
 		}
 		(*e)[k] += v
 	}
-}
-
-type Option func(opt *Options)
-
-type Options struct {
-	ResponseTime   *time.Duration
-	ResponseLength int64
-	Error          error
 }
 
 func roundResponseTime(d time.Duration) int64 {
