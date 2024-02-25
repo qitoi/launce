@@ -21,9 +21,14 @@ import (
 	"errors"
 	"fmt"
 	"sync/atomic"
+	"time"
 
 	"github.com/qitoi/launce/spawner"
 	"github.com/qitoi/launce/stats"
+)
+
+const (
+	defaultStatsNotifyInterval = 100 * time.Millisecond
 )
 
 var (
@@ -49,6 +54,7 @@ type Runner interface {
 
 type LoadRunner struct {
 	SpawnMode           spawner.SpawnMode
+	StatsNotifyInterval time.Duration
 	ReportExceptionFunc func(error)
 	SendMessageFunc     func(typ string, data any) error
 
@@ -67,11 +73,11 @@ type LoadRunner struct {
 
 func NewLoadRunner() *LoadRunner {
 	return &LoadRunner{
-		SpawnMode: spawner.SpawnOnce,
+		SpawnMode:           spawner.SpawnOnce,
+		StatsNotifyInterval: defaultStatsNotifyInterval,
 
-		userSpawners: map[string]*spawner.Spawner{},
-		statsCh:      make(chan *stats.Stats),
-
+		userSpawners:    map[string]*spawner.Spawner{},
+		statsCh:         make(chan *stats.Stats),
 		messageHandlers: map[string][]MessageHandler{},
 	}
 }
@@ -100,8 +106,8 @@ func (l *LoadRunner) SetParsedOptions(options *ParsedOptions) {
 func (l *LoadRunner) RegisterUser(name string, f func() User) {
 	spawnFunc := func(ctx context.Context) {
 		rep := &stats.Reporter{}
-		rep.Init(l.statsCh)
-		defer rep.Close()
+		rep.Start(l.statsCh, l.StatsNotifyInterval)
+		defer rep.Stop()
 
 		user := f()
 		user.Init(user, l, rep)

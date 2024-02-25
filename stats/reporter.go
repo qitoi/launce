@@ -33,11 +33,11 @@ type Reporter struct {
 	ch chan<- reportRequest
 }
 
-func (r *Reporter) Init(statsCh chan<- *Stats) {
-	r.ch = r.start(statsCh)
+func (r *Reporter) Start(statsCh chan<- *Stats, reportInterval time.Duration) {
+	r.ch = r.start(statsCh, reportInterval)
 }
 
-func (r *Reporter) Close() {
+func (r *Reporter) Stop() {
 	close(r.ch)
 }
 
@@ -63,12 +63,12 @@ func (r *Reporter) ReportError(requestType, name string, responseTime time.Durat
 	}
 }
 
-func (r *Reporter) start(statsCh chan<- *Stats) chan<- reportRequest {
+func (r *Reporter) start(statsCh chan<- *Stats, reportInterval time.Duration) chan<- reportRequest {
 	s := New()
-	ch := make(chan reportRequest, 100)
+	ch := make(chan reportRequest, 10)
 
 	go func() {
-		ticker := time.NewTicker(100 * time.Millisecond)
+		ticker := time.NewTicker(reportInterval)
 		defer ticker.Stop()
 
 		for {

@@ -46,8 +46,9 @@ var (
 const (
 	defaultHeartbeatInterval      = 1 * time.Second
 	defaultMetricsMonitorInterval = 5 * time.Second
-	defaultStatsReportInterval    = 3 * time.Second
 	defaultMasterHeartbeatTimeout = 60 * time.Second
+	defaultStatsReportInterval    = 3 * time.Second
+	defaultStatsAggregateInterval = 100 * time.Millisecond
 
 	connectTimeout    = 5 * time.Second
 	connectRetryCount = 60
@@ -76,8 +77,9 @@ type Worker struct {
 	ClientID               string
 	HeartbeatInterval      time.Duration
 	MetricsMonitorInterval time.Duration
-	StatsReportInterval    time.Duration
 	MasterHeartbeatTimeout time.Duration
+	StatsReportInterval    time.Duration
+	StatsAggregateInterval time.Duration
 
 	runner      *LoadRunner
 	cancel      atomic.Value
@@ -106,8 +108,9 @@ func NewWorker(transport Transport) (*Worker, error) {
 		ClientID:               id,
 		HeartbeatInterval:      defaultHeartbeatInterval,
 		MetricsMonitorInterval: defaultMetricsMonitorInterval,
-		StatsReportInterval:    defaultStatsReportInterval,
 		MasterHeartbeatTimeout: defaultMasterHeartbeatTimeout,
+		StatsReportInterval:    defaultStatsReportInterval,
+		StatsAggregateInterval: defaultStatsAggregateInterval,
 
 		runner:      NewLoadRunner(),
 		index:       -1,
@@ -128,6 +131,8 @@ func NewWorker(transport Transport) (*Worker, error) {
 
 func (w *Worker) Join() error {
 	var wg sync.WaitGroup
+
+	w.runner.StatsNotifyInterval = w.StatsAggregateInterval
 
 	// マスターへのコネクション確立前に Quit された場合は、トランスポートのコンテキストをキャンセルし、トランスポートを閉じることで終了させる
 	ctx, cancel := context.WithCancel(context.Background())
