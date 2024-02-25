@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/qitoi/launce"
 	"github.com/qitoi/launce/stats"
 )
 
@@ -40,7 +41,15 @@ func parseTime(s string) time.Time {
 
 func log(s *stats.Stats, typ, name, datetime string, duration int, size int64, err error) {
 	tm := parseTime(datetime)
-	s.Add(tm, typ, name, size, duration, err)
+	d := launce.NoneResponseTime
+	if duration >= 0 {
+		d = time.Duration(duration) * time.Millisecond
+	}
+	sz := int64(0)
+	if size >= 0 {
+		sz = size
+	}
+	s.Add(tm, typ, name, d, sz, err)
 }
 
 func getStats() *stats.Stats {
@@ -70,16 +79,16 @@ func extractEntriesField[T any](s *stats.Stats, f func(e *stats.Entry) T) map[st
 
 func TestStatistics_Entries_StartTime(t *testing.T) {
 	s := getStats()
-	extractor := func(e *stats.Entry) time.Time {
+	extractor := func(e *stats.Entry) int64 {
 		return e.StartTime
 	}
 
 	fields := extractEntriesField(s, extractor)
-	expected := map[string]time.Time{
-		"GET:/test1": parseTime("2024-01-01T00:00:00.100Z"),
-		"GET:/test2": parseTime("2024-01-01T00:00:00.080Z"),
-		"GET:/test3": parseTime("2024-01-01T00:00:01.600Z"),
-		"GET:/error": parseTime("2024-01-01T00:00:01.800Z"),
+	expected := map[string]int64{
+		"GET:/test1": parseTime("2024-01-01T00:00:00.100Z").UnixNano(),
+		"GET:/test2": parseTime("2024-01-01T00:00:00.080Z").UnixNano(),
+		"GET:/test3": parseTime("2024-01-01T00:00:01.600Z").UnixNano(),
+		"GET:/error": parseTime("2024-01-01T00:00:01.800Z").UnixNano(),
 	}
 	if !reflect.DeepEqual(fields, expected) {
 		t.Fatalf("invalid value. got:%v, want:%v", fields, expected)
@@ -88,7 +97,7 @@ func TestStatistics_Entries_StartTime(t *testing.T) {
 	s.Flush()
 
 	fields = extractEntriesField(s, extractor)
-	expected = map[string]time.Time{}
+	expected = map[string]int64{}
 	if !reflect.DeepEqual(fields, expected) {
 		t.Fatalf("invalid value. got:%v, want:%v", fields, expected)
 	}
@@ -242,16 +251,16 @@ func TestStatistics_Entries_NumFailuresPerSec(t *testing.T) {
 
 func TestStatistics_Entries_LastRequestTimestamp(t *testing.T) {
 	s := getStats()
-	extractor := func(e *stats.Entry) time.Time {
+	extractor := func(e *stats.Entry) int64 {
 		return e.LastRequestTimestamp
 	}
 
 	fields := extractEntriesField(s, extractor)
-	expected := map[string]time.Time{
-		"GET:/test1": parseTime("2024-01-01T00:00:01.999999999Z"),
-		"GET:/test2": parseTime("2024-01-01T00:00:01.200Z"),
-		"GET:/test3": parseTime("2024-01-01T00:00:01.600Z"),
-		"GET:/error": parseTime("2024-01-01T00:00:02.500Z"),
+	expected := map[string]int64{
+		"GET:/test1": parseTime("2024-01-01T00:00:01.999999999Z").UnixNano(),
+		"GET:/test2": parseTime("2024-01-01T00:00:01.200Z").UnixNano(),
+		"GET:/test3": parseTime("2024-01-01T00:00:01.600Z").UnixNano(),
+		"GET:/error": parseTime("2024-01-01T00:00:02.500Z").UnixNano(),
 	}
 	if !reflect.DeepEqual(fields, expected) {
 		t.Fatalf("invalid value. got:%v, want:%v", fields, expected)
@@ -260,7 +269,7 @@ func TestStatistics_Entries_LastRequestTimestamp(t *testing.T) {
 	s.Flush()
 
 	fields = extractEntriesField(s, extractor)
-	expected = map[string]time.Time{}
+	expected = map[string]int64{}
 	if !reflect.DeepEqual(fields, expected) {
 		t.Fatalf("invalid value. got:%v, want:%v", fields, expected)
 	}
