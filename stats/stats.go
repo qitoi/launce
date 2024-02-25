@@ -17,13 +17,10 @@
 package stats
 
 import (
-	"sync"
 	"time"
 )
 
 type Stats struct {
-	mu sync.Mutex
-
 	Entries Entries
 	Errors  Errors
 }
