@@ -23,10 +23,8 @@ import (
 	"slices"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/qitoi/launce"
-	"github.com/qitoi/launce/stats"
 )
 
 var (
@@ -236,29 +234,6 @@ func TestLoadRunner_Spawn_MultiUser(t *testing.T) {
 	}
 	if n := uc2.Stopped(); n != 5 {
 		t.Fatalf("unexpected stopped user. got:%v want:%v", n, 5)
-	}
-}
-
-func TestLoadRunner_Report(t *testing.T) {
-	r := launce.NewLoadRunner()
-
-	r.Report("GET", "/foo", launce.WithResponseTime(100*time.Microsecond), launce.WithResponseLength(1024))
-	r.Report("GET", "/foo", launce.WithResponseTime(200*time.Microsecond), launce.WithResponseLength(10), launce.WithError(errors.New("error")))
-	r.Report("GET", "/bar", launce.WithResponseTime(100*time.Microsecond), launce.WithResponseLength(1024))
-
-	entries, total, errs := r.FlushStats()
-
-	if n := entries[stats.EntryKey{Method: "GET", Name: "/foo"}].NumRequests; n != 2 {
-		t.Fatalf("foo.num_requests got:%v want:%v", n, 2)
-	}
-	if n := entries[stats.EntryKey{Method: "GET", Name: "/bar"}].NumRequests; n != 1 {
-		t.Fatalf("bar.num_requests got:%v want:%v", n, 1)
-	}
-	if n := total.NumRequests; n != 3 {
-		t.Fatalf("foo.num_requests got:%v want:%v", n, 3)
-	}
-	if n := errs[stats.ErrorKey{Method: "GET", Name: "/foo", Error: "error"}]; n != 1 {
-		t.Fatalf("foo.errors got:%v want:%v", n, 3)
 	}
 }
 

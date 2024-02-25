@@ -61,7 +61,7 @@ func (u *User) TaskSet() taskset.TaskSet {
 }
 
 func (u *User) task1(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
-	u.Runner().Report(
+	u.Report(
 		http.MethodGet,
 		"/task/1",
 		launce.WithResponseTime(100*time.Millisecond),
@@ -70,7 +70,7 @@ func (u *User) task1(_ context.Context, _ launce.User, _ taskset.Scheduler) erro
 }
 
 func (u *User) task2(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
-	u.Runner().Report(
+	u.Report(
 		http.MethodGet,
 		"/task/2",
 		launce.WithResponseTime(100*time.Millisecond),
@@ -79,7 +79,7 @@ func (u *User) task2(_ context.Context, _ launce.User, _ taskset.Scheduler) erro
 }
 
 func (u *User) task3(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
-	u.Runner().Report(
+	u.Report(
 		http.MethodGet,
 		"/task/3",
 		launce.WithResponseTime(100*time.Millisecond),
@@ -88,7 +88,7 @@ func (u *User) task3(_ context.Context, _ launce.User, _ taskset.Scheduler) erro
 }
 
 func (u *User) task4(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
-	u.Runner().Report(
+	u.Report(
 		http.MethodGet,
 		"/task/4",
 		launce.WithResponseTime(100*time.Millisecond),

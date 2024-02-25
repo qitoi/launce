@@ -28,59 +28,130 @@ var (
 	unixTimeZero = time.Unix(0, 0)
 )
 
+type Reporter struct {
+	ch chan<- EntryRequest
+}
+
+func (r *Reporter) Init(statsCh chan<- *Stats) {
+	r.ch = r.start(statsCh)
+}
+
+func (r *Reporter) Close() {
+	close(r.ch)
+}
+
+func (r *Reporter) Report(requestType, name string, opts ...Option) {
+	var opt Options
+	for _, f := range opts {
+		f(&opt)
+	}
+	r.ch <- EntryRequest{
+		Now:         time.Now(),
+		RequestType: requestType,
+		Name:        name,
+		Options:     opt,
+	}
+}
+
+func (r *Reporter) start(statsCh chan<- *Stats) chan<- EntryRequest {
+	s := New()
+	ch := make(chan EntryRequest, 100)
+
+	go func() {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case e, ok := <-ch:
+				if !ok {
+					statsCh <- s
+					return
+				}
+				s.Add(e.Now, e.RequestType, e.Name, e.Options)
+
+			case <-ticker.C:
+				statsCh <- s
+				s = New()
+			}
+		}
+	}()
+
+	return ch
+}
+
+type EntryRequest struct {
+	Now         time.Time
+	RequestType string
+	Name        string
+	Options     Options
+}
+
 type Stats struct {
 	mu sync.Mutex
 
 	Entries Entries
-	Total   *Entry
 	Errors  Errors
 }
 
 func New() *Stats {
 	return &Stats{
 		Entries: Entries{},
-		Total:   newEntry(),
 		Errors:  Errors{},
 	}
 }
 
 func (s *Stats) Flush() (Entries, *Entry, Errors) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	entries, total, errors := s.Entries, s.Total, s.Errors
+	entries, errors := s.Entries, s.Errors
 	s.Entries = Entries{}
-	s.Total = newEntry()
 	s.Errors = Errors{}
+	total := entries.Aggregate()
 	return entries, total, errors
 }
 
 func (s *Stats) Clear() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.Entries = Entries{}
-	s.Total = newEntry()
 	s.Errors = Errors{}
 }
 
 func (s *Stats) Add(now time.Time, requestType, name string, opts Options) {
-	key := EntryKey{requestType, name}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.Total.Add(now, opts)
-
+	var key = EntryKey{
+		Method: requestType,
+		Name:   name,
+	}
 	if _, ok := s.Entries[key]; !ok {
 		s.Entries[key] = newEntry()
 	}
 	s.Entries[key].Add(now, opts)
 
 	if opts.Error != nil {
-		s.Errors.Add(requestType, name, opts.Error)
+		s.Errors.Add(key.Method, key.Name, opts.Error)
 	}
 }
 
+func (s *Stats) Merge(src *Stats) {
+	s.Entries.Merge(src.Entries)
+	s.Errors.Merge(src.Errors)
+}
+
 type Entries map[EntryKey]*Entry
+
+func (e *Entries) Merge(src Entries) {
+	for k, v := range src {
+		if _, ok := (*e)[k]; !ok {
+			(*e)[k] = newEntry()
+		}
+		(*e)[k].Merge(v)
+	}
+}
+
+func (e *Entries) Aggregate() *Entry {
+	total := newEntry()
+	for _, n := range *e {
+		total.Merge(n)
+	}
+	return total
+}
 
 type EntryKey struct {
 	Method string
@@ -106,47 +177,89 @@ type Entry struct {
 	ResponseTimes map[int64]int64
 }
 
-func (s *Entry) Add(now time.Time, opt Options) {
+func (e *Entry) Add(now time.Time, opt Options) {
 	t := now.Unix()
 
-	if s.StartTime == unixTimeZero || s.StartTime.After(now) {
-		s.StartTime = now
+	if e.StartTime == unixTimeZero || e.StartTime.After(now) {
+		e.StartTime = now
 	}
-	if s.LastRequestTimestamp.Before(now) {
-		s.LastRequestTimestamp = now
+	if e.LastRequestTimestamp.Before(now) {
+		e.LastRequestTimestamp = now
 	}
 
-	s.NumRequests += 1
+	e.NumRequests += 1
 
 	if opt.ResponseTime == nil {
-		s.NumNoneRequests += 1
+		e.NumNoneRequests += 1
 	} else {
 		respTime := *opt.ResponseTime
-		s.TotalResponseTime += respTime
-		if s.MinResponseTime == nil {
-			s.MinResponseTime = &respTime
-		} else if *s.MinResponseTime > respTime {
-			*s.MinResponseTime = respTime
+		e.TotalResponseTime += respTime
+		if e.MinResponseTime == nil {
+			e.MinResponseTime = &respTime
+		} else if *e.MinResponseTime > respTime {
+			*e.MinResponseTime = respTime
 		}
-		s.MaxResponseTime = max(s.MaxResponseTime, respTime)
+		e.MaxResponseTime = max(e.MaxResponseTime, respTime)
 		rounded := roundResponseTime(respTime)
-		if _, ok := s.ResponseTimes[rounded]; !ok {
-			s.ResponseTimes[rounded] = 1
+		if _, ok := e.ResponseTimes[rounded]; !ok {
+			e.ResponseTimes[rounded] = 1
 		} else {
-			s.ResponseTimes[rounded] += 1
+			e.ResponseTimes[rounded] += 1
 		}
 	}
 
-	s.TotalContentLength += opt.ResponseLength
+	e.TotalContentLength += opt.ResponseLength
 
-	if _, ok := s.NumRequestsPerSec[t]; !ok {
-		s.NumRequestsPerSec[t] = 0
+	if _, ok := e.NumRequestsPerSec[t]; !ok {
+		e.NumRequestsPerSec[t] = 0
 	}
-	s.NumRequestsPerSec[t] += 1
+	e.NumRequestsPerSec[t] += 1
 
 	if opt.Error != nil {
-		s.NumFailures += 1
-		s.NumFailuresPerSec[t] += 1
+		e.NumFailures += 1
+		e.NumFailuresPerSec[t] += 1
+	}
+}
+
+func (e *Entry) Merge(src *Entry) {
+	if e.StartTime == unixTimeZero || e.StartTime.After(src.StartTime) {
+		e.StartTime = src.StartTime
+	}
+	e.NumRequests += src.NumRequests
+	e.NumNoneRequests += src.NumNoneRequests
+	for k, v := range src.NumRequestsPerSec {
+		if _, ok := e.NumRequestsPerSec[k]; !ok {
+			e.NumRequestsPerSec[k] = 0
+		}
+		e.NumRequestsPerSec[k] += v
+	}
+	e.NumFailures += src.NumFailures
+	for k, v := range src.NumFailuresPerSec {
+		if _, ok := e.NumFailuresPerSec[k]; !ok {
+			e.NumFailuresPerSec[k] = 0
+		}
+		e.NumFailuresPerSec[k] += v
+	}
+	if e.LastRequestTimestamp.Before(src.LastRequestTimestamp) {
+		e.LastRequestTimestamp = src.LastRequestTimestamp
+	}
+	e.TotalResponseTime += src.TotalResponseTime
+	if e.MinResponseTime == nil {
+		var d time.Duration
+		e.MinResponseTime = &d
+	}
+	if src.MinResponseTime != nil && *e.MinResponseTime > *src.MinResponseTime {
+		*e.MinResponseTime = *src.MinResponseTime
+	}
+	if e.MaxResponseTime < src.MaxResponseTime {
+		e.MaxResponseTime = src.MaxResponseTime
+	}
+	e.TotalContentLength += src.TotalContentLength
+	for k, v := range src.ResponseTimes {
+		if _, ok := e.ResponseTimes[k]; !ok {
+			e.ResponseTimes[k] = 0
+		}
+		e.ResponseTimes[k] += v
 	}
 }
 
@@ -180,13 +293,24 @@ func (s *ErrorKey) Encode() string {
 
 type Errors map[ErrorKey]int64
 
-func (s Errors) Add(method, name string, err error) {
+func (e *Errors) Add(method, name string, err error) {
 	key := ErrorKey{method, name, err.Error()}
-	if _, ok := s[key]; !ok {
-		s[key] = 0
+	if _, ok := (*e)[key]; !ok {
+		(*e)[key] = 0
 	}
-	s[key] += 1
+	(*e)[key] += 1
 }
+
+func (e *Errors) Merge(src Errors) {
+	for k, v := range src {
+		if _, ok := (*e)[k]; !ok {
+			(*e)[k] = 0
+		}
+		(*e)[k] += v
+	}
+}
+
+type Option func(opt *Options)
 
 type Options struct {
 	ResponseTime   *time.Duration

@@ -45,7 +45,7 @@ func (u *User) Process(ctx context.Context) error {
 	d := time.Now().Sub(s)
 
 	// report as successful
-	u.Runner().Report(
+	u.Report(
 		http.MethodGet,
 		"/foo",
 		launce.WithResponseTime(d),
@@ -62,7 +62,7 @@ func (u *User) Process(ctx context.Context) error {
 	d = time.Now().Sub(s)
 
 	// report as failure
-	u.Runner().Report(
+	u.Report(
 		http.MethodGet,
 		"/bar",
 		launce.WithResponseTime(d),

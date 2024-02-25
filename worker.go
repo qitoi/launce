@@ -84,6 +84,7 @@ type Worker struct {
 	index       int64
 	state       WorkerState
 	transport   Transport
+	stats       *stats.Stats
 	spawnCh     chan map[string]int64
 	ackCh       chan struct{}
 	heartbeatCh chan struct{}
@@ -112,6 +113,7 @@ func NewWorker(transport Transport) (*Worker, error) {
 		index:       -1,
 		state:       WorkerStateInit,
 		transport:   transport,
+		stats:       stats.New(),
 		spawnCh:     make(chan map[string]int64),
 		ackCh:       make(chan struct{}, 1),
 		heartbeatCh: make(chan struct{}),
@@ -473,6 +475,8 @@ func (w *Worker) startStatsProcess(ctx context.Context, wg *sync.WaitGroup, inte
 		return
 	}
 
+	ch := w.runner.Stats()
+
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -483,6 +487,9 @@ func (w *Worker) startStatsProcess(ctx context.Context, wg *sync.WaitGroup, inte
 	loop:
 		for {
 			select {
+			case st := <-ch:
+				w.stats.Merge(st)
+
 			case <-ticker.C:
 				_ = w.sendStats()
 
@@ -494,7 +501,7 @@ func (w *Worker) startStatsProcess(ctx context.Context, wg *sync.WaitGroup, inte
 }
 
 func (w *Worker) sendStats() error {
-	payload := convertStatisticsPayload(w.runner.FlushStats())
+	payload := convertStatisticsPayload(w.stats.Flush())
 	payload.UserClassesCount = w.runner.Users()
 	for _, count := range payload.UserClassesCount {
 		payload.UserCount += count

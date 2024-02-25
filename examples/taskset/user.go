@@ -50,7 +50,7 @@ func (u *User) TaskSet() taskset.TaskSet {
 }
 
 func foo(_ context.Context, u launce.User, _ taskset.Scheduler) error {
-	u.Runner().Report(
+	u.Report(
 		http.MethodGet,
 		"/foo",
 		launce.WithResponseTime(100*time.Millisecond),
@@ -59,7 +59,7 @@ func foo(_ context.Context, u launce.User, _ taskset.Scheduler) error {
 }
 
 func (u *User) bar(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
-	u.Runner().Report(
+	u.Report(
 		http.MethodGet,
 		"/bar",
 		launce.WithResponseTime(100*time.Millisecond),
@@ -68,7 +68,7 @@ func (u *User) bar(_ context.Context, _ launce.User, _ taskset.Scheduler) error 
 }
 
 func (u *User) seq1(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
-	u.Runner().Report(
+	u.Report(
 		http.MethodGet,
 		"/seq/1",
 		launce.WithResponseTime(100*time.Millisecond),
@@ -77,7 +77,7 @@ func (u *User) seq1(_ context.Context, _ launce.User, _ taskset.Scheduler) error
 }
 
 func (u *User) seq2(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
-	u.Runner().Report(
+	u.Report(
 		http.MethodGet,
 		"/seq/2",
 		launce.WithResponseTime(100*time.Millisecond),
@@ -88,7 +88,7 @@ func (u *User) seq2(_ context.Context, _ launce.User, _ taskset.Scheduler) error
 type seq3 struct{}
 
 func (s *seq3) Run(_ context.Context, u launce.User, _ taskset.Scheduler) error {
-	u.Runner().Report(
+	u.Report(
 		http.MethodGet,
 		"/seq/3",
 		launce.WithResponseTime(100*time.Millisecond),

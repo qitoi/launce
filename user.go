@@ -21,15 +21,22 @@ import (
 	"errors"
 
 	"github.com/qitoi/launce/internal"
+	"github.com/qitoi/launce/stats"
 )
 
 var (
 	StopUser = errors.New("stop user")
 )
 
+type Reporter interface {
+	Report(requestType, name string, opts ...stats.Option)
+}
+
 type User interface {
-	Init(u User, r Runner)
+	Init(u User, r Runner, rep Reporter)
 	Runner() Runner
+
+	Report(requestType, name string, opts ...stats.Option)
 
 	Wait(ctx context.Context) error
 
@@ -44,21 +51,27 @@ type BaseUserRequirement interface {
 }
 
 type BaseUser struct {
-	waiter internal.Waiter
-	runner Runner
+	waiter   internal.Waiter
+	runner   Runner
+	reporter Reporter
 }
 
-func (b *BaseUser) Init(u User, r Runner) {
+func (b *BaseUser) Init(u User, r Runner, rep Reporter) {
 	if bu, ok := u.(BaseUserRequirement); !ok {
 		panic("not implemented launce.BaseUserRequirement")
 	} else {
 		b.runner = r
+		b.reporter = rep
 		b.waiter.Init(bu.WaitTime())
 	}
 }
 
 func (b *BaseUser) Runner() Runner {
 	return b.runner
+}
+
+func (b *BaseUser) Report(requestType, name string, opts ...stats.Option) {
+	b.reporter.Report(requestType, name, opts...)
 }
 
 func (b *BaseUser) Wait(ctx context.Context) error {
