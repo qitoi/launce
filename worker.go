@@ -574,8 +574,8 @@ func convertStatisticsEntry(name, method string, entry *stats.Entry) *statsPaylo
 	return &statsPayloadEntry{
 		Name:                 name,
 		Method:               method,
-		LastRequestTimestamp: float64(entry.LastRequestTimestamp.UnixNano()) / 1e9, // [s]
-		StartTime:            float64(entry.StartTime.UnixNano()) / 1e9,            // [s]
+		LastRequestTimestamp: float64(entry.LastRequestTimestamp) / 1e9, // [s]
+		StartTime:            float64(entry.StartTime) / 1e9,            // [s]
 		NumRequests:          entry.NumRequests,
 		NumNoneRequests:      entry.NumNoneRequests,
 		NumFailures:          entry.NumFailures,

@@ -24,10 +24,6 @@ import (
 	"time"
 )
 
-var (
-	unixTimeZero = time.Unix(0, 0)
-)
-
 type Stats struct {
 	mu sync.Mutex
 
@@ -100,14 +96,14 @@ type EntryKey struct {
 }
 
 type Entry struct {
-	StartTime time.Time
+	StartTime int64 // [ns]
 
 	NumRequests          int64
 	NumNoneRequests      int64
 	NumRequestsPerSec    map[int64]int64
 	NumFailures          int64
 	NumFailuresPerSec    map[int64]int64
-	LastRequestTimestamp time.Time
+	LastRequestTimestamp int64 // [ns]
 
 	TotalResponseTime time.Duration
 	MinResponseTime   *time.Duration
@@ -120,12 +116,13 @@ type Entry struct {
 
 func (e *Entry) Add(now time.Time, responseTime time.Duration, contentLength int64, err error) {
 	t := now.Unix()
+	nowNano := now.UnixNano()
 
-	if e.StartTime == unixTimeZero || e.StartTime.After(now) {
-		e.StartTime = now
+	if e.StartTime == 0 || e.StartTime > nowNano {
+		e.StartTime = nowNano
 	}
-	if e.LastRequestTimestamp.Before(now) {
-		e.LastRequestTimestamp = now
+	if e.LastRequestTimestamp < nowNano {
+		e.LastRequestTimestamp = nowNano
 	}
 
 	e.NumRequests += 1
@@ -162,7 +159,7 @@ func (e *Entry) Add(now time.Time, responseTime time.Duration, contentLength int
 }
 
 func (e *Entry) Merge(src *Entry) {
-	if e.StartTime == unixTimeZero || e.StartTime.After(src.StartTime) {
+	if e.StartTime == 0 || e.StartTime > src.StartTime {
 		e.StartTime = src.StartTime
 	}
 	e.NumRequests += src.NumRequests
@@ -180,7 +177,7 @@ func (e *Entry) Merge(src *Entry) {
 		}
 		e.NumFailuresPerSec[k] += v
 	}
-	if e.LastRequestTimestamp.Before(src.LastRequestTimestamp) {
+	if e.LastRequestTimestamp < src.LastRequestTimestamp {
 		e.LastRequestTimestamp = src.LastRequestTimestamp
 	}
 	e.TotalResponseTime += src.TotalResponseTime
@@ -205,13 +202,13 @@ func (e *Entry) Merge(src *Entry) {
 
 func newEntry() *Entry {
 	return &Entry{
-		StartTime:            unixTimeZero,
+		StartTime:            0,
 		NumRequests:          0,
 		NumNoneRequests:      0,
 		NumRequestsPerSec:    map[int64]int64{},
 		NumFailures:          0,
 		NumFailuresPerSec:    map[int64]int64{},
-		LastRequestTimestamp: unixTimeZero,
+		LastRequestTimestamp: 0,
 		TotalResponseTime:    0,
 		MinResponseTime:      nil,
 		MaxResponseTime:      0,
