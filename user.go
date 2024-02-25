@@ -111,6 +111,9 @@ func processUser(ctx context.Context, user User) error {
 			}
 			// locust/user stopped
 			break
+		} else if ctx.Err() != nil {
+			// user.Process がコンテキストのキャンセルを無視した場合 goroutine が停止しなくなるのでここでもチェックする
+			break
 		}
 	}
 
