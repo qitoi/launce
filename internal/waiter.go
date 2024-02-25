@@ -36,7 +36,7 @@ func (w *Waiter) Init(waitTime func() time.Duration) {
 
 func (w *Waiter) Wait(ctx context.Context) error {
 	if w.waitTime == nil {
-		return nil
+		return ctx.Err()
 	}
 
 	d := w.waitTime()
