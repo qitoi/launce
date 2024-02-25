@@ -19,6 +19,7 @@ package launce
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/qitoi/launce/internal"
 )
@@ -27,15 +28,24 @@ var (
 	StopUser = errors.New("stop user")
 )
 
+const (
+	NoneResponseTime = time.Duration(-1)
+)
+
+type Reporter interface {
+	Report(requestType, name string, responseTime time.Duration, contentLength int64)
+	ReportError(requestType, name string, responseTime time.Duration, contentLength int64, err error)
+}
+
 type User interface {
-	Init(u User, r Runner)
+	Reporter
+
+	Init(u User, r Runner, rep Reporter)
 	Runner() Runner
-
-	Wait(ctx context.Context) error
-
 	OnStart(ctx context.Context) error
 	OnStop(ctx context.Context) error
 	Process(ctx context.Context) error
+	Wait(ctx context.Context) error
 }
 
 type BaseUserRequirement interface {
@@ -44,15 +54,17 @@ type BaseUserRequirement interface {
 }
 
 type BaseUser struct {
-	waiter internal.Waiter
-	runner Runner
+	waiter   internal.Waiter
+	runner   Runner
+	reporter Reporter
 }
 
-func (b *BaseUser) Init(u User, r Runner) {
+func (b *BaseUser) Init(u User, r Runner, rep Reporter) {
 	if bu, ok := u.(BaseUserRequirement); !ok {
 		panic("not implemented launce.BaseUserRequirement")
 	} else {
 		b.runner = r
+		b.reporter = rep
 		b.waiter.Init(bu.WaitTime())
 	}
 }
@@ -71,6 +83,14 @@ func (b *BaseUser) OnStart(ctx context.Context) error {
 
 func (b *BaseUser) OnStop(ctx context.Context) error {
 	return nil
+}
+
+func (b *BaseUser) Report(requestType, name string, responseTime time.Duration, contentLength int64) {
+	b.reporter.Report(requestType, name, responseTime, contentLength)
+}
+
+func (b *BaseUser) ReportError(requestType, name string, responseTime time.Duration, contentLength int64, err error) {
+	b.reporter.ReportError(requestType, name, responseTime, contentLength, err)
 }
 
 func processUser(ctx context.Context, user User) error {

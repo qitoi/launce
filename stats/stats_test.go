@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/qitoi/launce"
 	"github.com/qitoi/launce/stats"
 )
 
@@ -39,18 +40,16 @@ func parseTime(s string) time.Time {
 }
 
 func log(s *stats.Stats, typ, name, datetime string, duration int, size int64, err error) {
-	var opts stats.Options
-	if duration >= 0 {
-		opts.ResponseTime = ptr(time.Duration(duration) * time.Millisecond)
-	}
-	if size >= 0 {
-		opts.ResponseLength = size
-	}
-	if err != nil {
-		opts.Error = err
-	}
 	tm := parseTime(datetime)
-	s.Add(tm, typ, name, opts)
+	d := launce.NoneResponseTime
+	if duration >= 0 {
+		d = time.Duration(duration) * time.Millisecond
+	}
+	sz := int64(0)
+	if size >= 0 {
+		sz = size
+	}
+	s.Add(tm, typ, name, d, sz, err)
 }
 
 func getStats() *stats.Stats {
@@ -80,16 +79,16 @@ func extractEntriesField[T any](s *stats.Stats, f func(e *stats.Entry) T) map[st
 
 func TestStatistics_Entries_StartTime(t *testing.T) {
 	s := getStats()
-	extractor := func(e *stats.Entry) time.Time {
+	extractor := func(e *stats.Entry) int64 {
 		return e.StartTime
 	}
 
 	fields := extractEntriesField(s, extractor)
-	expected := map[string]time.Time{
-		"GET:/test1": parseTime("2024-01-01T00:00:00.100Z"),
-		"GET:/test2": parseTime("2024-01-01T00:00:00.080Z"),
-		"GET:/test3": parseTime("2024-01-01T00:00:01.600Z"),
-		"GET:/error": parseTime("2024-01-01T00:00:01.800Z"),
+	expected := map[string]int64{
+		"GET:/test1": parseTime("2024-01-01T00:00:00.100Z").UnixNano(),
+		"GET:/test2": parseTime("2024-01-01T00:00:00.080Z").UnixNano(),
+		"GET:/test3": parseTime("2024-01-01T00:00:01.600Z").UnixNano(),
+		"GET:/error": parseTime("2024-01-01T00:00:01.800Z").UnixNano(),
 	}
 	if !reflect.DeepEqual(fields, expected) {
 		t.Fatalf("invalid value. got:%v, want:%v", fields, expected)
@@ -98,7 +97,7 @@ func TestStatistics_Entries_StartTime(t *testing.T) {
 	s.Flush()
 
 	fields = extractEntriesField(s, extractor)
-	expected = map[string]time.Time{}
+	expected = map[string]int64{}
 	if !reflect.DeepEqual(fields, expected) {
 		t.Fatalf("invalid value. got:%v, want:%v", fields, expected)
 	}
@@ -252,16 +251,16 @@ func TestStatistics_Entries_NumFailuresPerSec(t *testing.T) {
 
 func TestStatistics_Entries_LastRequestTimestamp(t *testing.T) {
 	s := getStats()
-	extractor := func(e *stats.Entry) time.Time {
+	extractor := func(e *stats.Entry) int64 {
 		return e.LastRequestTimestamp
 	}
 
 	fields := extractEntriesField(s, extractor)
-	expected := map[string]time.Time{
-		"GET:/test1": parseTime("2024-01-01T00:00:01.999999999Z"),
-		"GET:/test2": parseTime("2024-01-01T00:00:01.200Z"),
-		"GET:/test3": parseTime("2024-01-01T00:00:01.600Z"),
-		"GET:/error": parseTime("2024-01-01T00:00:02.500Z"),
+	expected := map[string]int64{
+		"GET:/test1": parseTime("2024-01-01T00:00:01.999999999Z").UnixNano(),
+		"GET:/test2": parseTime("2024-01-01T00:00:01.200Z").UnixNano(),
+		"GET:/test3": parseTime("2024-01-01T00:00:01.600Z").UnixNano(),
+		"GET:/error": parseTime("2024-01-01T00:00:02.500Z").UnixNano(),
 	}
 	if !reflect.DeepEqual(fields, expected) {
 		t.Fatalf("invalid value. got:%v, want:%v", fields, expected)
@@ -270,7 +269,7 @@ func TestStatistics_Entries_LastRequestTimestamp(t *testing.T) {
 	s.Flush()
 
 	fields = extractEntriesField(s, extractor)
-	expected = map[string]time.Time{}
+	expected = map[string]int64{}
 	if !reflect.DeepEqual(fields, expected) {
 		t.Fatalf("invalid value. got:%v, want:%v", fields, expected)
 	}
@@ -413,216 +412,6 @@ func TestStatistics_Entries_ResponseTimes(t *testing.T) {
 	expected = map[string]map[int64]int64{}
 	if !reflect.DeepEqual(fields, expected) {
 		t.Fatalf("invalid value. got:%v, want:%v", fields, expected)
-	}
-}
-
-// Total
-
-func TestStatistics_Total_StartTime(t *testing.T) {
-	s := getStats()
-
-	expected := parseTime("2024-01-01T00:00:00.080Z")
-	if s.Total.StartTime != expected {
-		t.Fatalf("invalid value. got:%v, want:%v", s.Total.StartTime, expected)
-	}
-
-	s.Flush()
-
-	expected = time.Unix(0, 0)
-	if s.Total.StartTime != expected {
-		t.Fatalf("invalid value. got:%v, want:%v", s.Total.StartTime, expected)
-	}
-}
-
-func TestStatistics_Total_NumRequests(t *testing.T) {
-	s := getStats()
-
-	expected := int64(10)
-	if s.Total.NumRequests != expected {
-		t.Fatalf("invalid value. got:%v, want:%v", s.Total.NumRequests, expected)
-	}
-
-	s.Flush()
-
-	expected = 0
-	if s.Total.NumRequests != expected {
-		t.Fatalf("invalid value. got:%v, want:%v", s.Total.NumRequests, expected)
-	}
-}
-
-func TestStatistics_Total_NumNoneRequests(t *testing.T) {
-	s := getStats()
-
-	expected := int64(2)
-	if s.Total.NumNoneRequests != expected {
-		t.Fatalf("invalid value. got:%v, want:%v", s.Total.NumNoneRequests, expected)
-	}
-
-	s.Flush()
-
-	expected = 0
-	if s.Total.NumNoneRequests != expected {
-		t.Fatalf("invalid value. got:%v, want:%v", s.Total.NumNoneRequests, expected)
-	}
-}
-
-func TestStatistics_Total_NumRequestsPerSec(t *testing.T) {
-	s := getStats()
-
-	expected := map[int64]int64{
-		1704067200: 3,
-		1704067201: 6,
-		1704067202: 1,
-	}
-	if !reflect.DeepEqual(s.Total.NumRequestsPerSec, expected) {
-		t.Fatalf("invalid value. got:%v, want:%v", s.Total.NumRequestsPerSec, expected)
-	}
-
-	s.Flush()
-
-	expected = map[int64]int64{}
-	if !reflect.DeepEqual(s.Total.NumRequestsPerSec, expected) {
-		t.Fatalf("invalid value. got:%v, want:%v", s.Total.NumRequestsPerSec, expected)
-	}
-}
-
-func TestStatistics_Total_NumFailures(t *testing.T) {
-	s := getStats()
-
-	expected := int64(4)
-	if s.Total.NumFailures != expected {
-		t.Fatalf("invalid value. got:%v, want:%v", s.Total.NumFailures, expected)
-	}
-
-	s.Flush()
-
-	expected = 0
-	if s.Total.NumFailures != expected {
-		t.Fatalf("invalid value. got:%v, want:%v", s.Total.NumFailures, expected)
-	}
-}
-
-func TestStatistics_Total_NumFailuresPerSec(t *testing.T) {
-	s := getStats()
-
-	expected := map[int64]int64{
-		1704067201: 3,
-		1704067202: 1,
-	}
-	if !reflect.DeepEqual(s.Total.NumFailuresPerSec, expected) {
-		t.Fatalf("invalid value. got:%v, want:%v", s.Total.NumFailuresPerSec, expected)
-	}
-
-	s.Flush()
-
-	expected = map[int64]int64{}
-	if !reflect.DeepEqual(s.Total.NumFailuresPerSec, expected) {
-		t.Fatalf("invalid value. got:%v, want:%v", s.Total.NumFailuresPerSec, expected)
-	}
-}
-
-func TestStatistics_Total_LastRequestTimestamp(t *testing.T) {
-	s := getStats()
-
-	expected := parseTime("2024-01-01T00:00:02.500Z")
-	if s.Total.LastRequestTimestamp != expected {
-		t.Fatalf("invalid value. got:%v, want:%v", s.Total.LastRequestTimestamp, expected)
-	}
-
-	s.Flush()
-
-	expected = time.Unix(0, 0)
-	if s.Total.LastRequestTimestamp != expected {
-		t.Fatalf("invalid value. got:%v, want:%v", s.Total.LastRequestTimestamp, expected)
-	}
-}
-
-func TestStatistics_Total_TotalResponseTime(t *testing.T) {
-	s := getStats()
-
-	expected := 13371 * time.Millisecond
-	if s.Total.TotalResponseTime != expected {
-		t.Fatalf("invalid value. got:%v, want:%v", s.Total.TotalResponseTime, expected)
-	}
-
-	s.Flush()
-
-	expected = 0
-	if s.Total.TotalResponseTime != expected {
-		t.Fatalf("invalid value. got:%v, want:%v", s.Total.TotalResponseTime, expected)
-	}
-}
-
-func TestStatistics_Total_MinResponseTime(t *testing.T) {
-	s := getStats()
-
-	expected := 8 * time.Millisecond
-	if s.Total.MinResponseTime != nil && *s.Total.MinResponseTime != expected {
-		t.Fatalf("invalid value. got:%v, want:%v", s.Total.MinResponseTime, expected)
-	}
-
-	s.Flush()
-
-	{
-		expected := (*time.Duration)(nil)
-		if s.Total.MinResponseTime != expected {
-			t.Fatalf("invalid value. got:%v, want:%v", s.Total.MinResponseTime, expected)
-		}
-	}
-}
-
-func TestStatistics_Total_MaxResponseTime(t *testing.T) {
-	s := getStats()
-
-	expected := 10777 * time.Millisecond
-	if s.Total.MaxResponseTime != expected {
-		t.Fatalf("invalid value. got:%v, want:%v", s.Total.MaxResponseTime, expected)
-	}
-
-	s.Flush()
-
-	expected = 0
-	if s.Total.MaxResponseTime != expected {
-		t.Fatalf("invalid value. got:%v, want:%v", s.Total.MaxResponseTime, expected)
-	}
-}
-
-func TestStatistics_Total_TotalContentLength(t *testing.T) {
-	s := getStats()
-
-	expected := int64(3314)
-	if s.Total.TotalContentLength != expected {
-		t.Fatalf("invalid value. got:%v, want:%v", s.Total.TotalContentLength, expected)
-	}
-
-	s.Flush()
-
-	expected = 0
-	if s.Total.TotalContentLength != expected {
-		t.Fatalf("invalid value. got:%v, want:%v", s.Total.TotalContentLength, expected)
-	}
-}
-
-func TestStatistics_Total_ResponseTimes(t *testing.T) {
-	s := getStats()
-
-	expected := map[int64]int64{
-		8:     1,
-		58:    1,
-		120:   3,
-		930:   1,
-		1200:  1,
-		11000: 1,
-	}
-	if !reflect.DeepEqual(s.Total.ResponseTimes, expected) {
-		t.Fatalf("invalid value. got:%v, want:%v", s.Total.ResponseTimes, expected)
-	}
-
-	s.Flush()
-
-	expected = map[int64]int64{}
-	if !reflect.DeepEqual(s.Total.ResponseTimes, expected) {
-		t.Fatalf("invalid value. got:%v, want:%v", s.Total.ResponseTimes, expected)
 	}
 }
 

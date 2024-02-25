@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"sync/atomic"
-	"time"
 
 	"github.com/qitoi/launce/spawner"
 	"github.com/qitoi/launce/stats"
@@ -41,30 +40,9 @@ func (e *UnknownUserError) Error() string {
 
 type MessageHandler func(msg ReceivedMessage)
 
-type StatsOption func(opt *stats.Options)
-
-func WithResponseTime(d time.Duration) StatsOption {
-	return func(opt *stats.Options) {
-		opt.ResponseTime = &d
-	}
-}
-
-func WithResponseLength(s int64) StatsOption {
-	return func(opt *stats.Options) {
-		opt.ResponseLength = s
-	}
-}
-
-func WithError(err error) StatsOption {
-	return func(opt *stats.Options) {
-		opt.Error = err
-	}
-}
-
 type Runner interface {
 	Host() string
 	ParsedOptions() *ParsedOptions
-	Report(requestType, name string, opts ...StatsOption)
 	ReportException(err error)
 	SendMessage(typ string, data any) error
 }
@@ -75,7 +53,7 @@ type LoadRunner struct {
 	SendMessageFunc     func(typ string, data any) error
 
 	userSpawners map[string]*spawner.Spawner
-	statistics   *stats.Stats
+	statsCh      chan *stats.Stats
 
 	host          atomic.Value
 	parsedOptions atomic.Pointer[ParsedOptions]
@@ -92,7 +70,7 @@ func NewLoadRunner() *LoadRunner {
 		SpawnMode: spawner.SpawnOnce,
 
 		userSpawners: map[string]*spawner.Spawner{},
-		statistics:   stats.New(),
+		statsCh:      make(chan *stats.Stats),
 
 		messageHandlers: map[string][]MessageHandler{},
 	}
@@ -121,8 +99,12 @@ func (l *LoadRunner) SetParsedOptions(options *ParsedOptions) {
 
 func (l *LoadRunner) RegisterUser(name string, f func() User) {
 	spawnFunc := func(ctx context.Context) {
+		rep := &stats.Reporter{}
+		rep.Init(l.statsCh)
+		defer rep.Close()
+
 		user := f()
-		user.Init(user, l)
+		user.Init(user, l, rep)
 		if err := processUser(ctx, user); err != nil {
 			if !errors.Is(err, context.Canceled) {
 			}
@@ -159,8 +141,6 @@ func (l *LoadRunner) OnTestStop(f func(ctx context.Context)) {
 }
 
 func (l *LoadRunner) Start() error {
-	l.FlushStats()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	l.cancelStart.Store(cancel)
 
@@ -216,20 +196,12 @@ func (l *LoadRunner) Users() map[string]int64 {
 	return ret
 }
 
-func (l *LoadRunner) Report(requestType, name string, opts ...StatsOption) {
-	var opt stats.Options
-	for _, f := range opts {
-		f(&opt)
-	}
-	l.statistics.Add(time.Now(), requestType, name, opt)
-}
-
 func (l *LoadRunner) ReportException(err error) {
 	if l.ReportExceptionFunc != nil {
 		l.ReportExceptionFunc(err)
 	}
 }
 
-func (l *LoadRunner) FlushStats() (stats.Entries, *stats.Entry, stats.Errors) {
-	return l.statistics.Flush()
+func (l *LoadRunner) Stats() <-chan *stats.Stats {
+	return l.statsCh
 }

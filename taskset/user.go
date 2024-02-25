@@ -33,11 +33,11 @@ type User struct {
 	taskset TaskSet
 }
 
-func (tu *User) Init(u launce.User, r launce.Runner) {
+func (tu *User) Init(u launce.User, r launce.Runner, rep launce.Reporter) {
 	if tur, ok := u.(UserRequirement); !ok {
 		panic("not implemented taskset.UserRequirement")
 	} else {
-		tu.BaseUser.Init(u, r)
+		tu.BaseUser.Init(u, r, rep)
 		tu.taskset = tur.TaskSet()
 	}
 }
