@@ -19,6 +19,7 @@ package launce
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -104,7 +105,7 @@ func NewWorker(transport Transport) (*Worker, error) {
 	}
 
 	w := &Worker{
-		Version:                "launce-0.0.1",
+		Version:                fmt.Sprintf("%s.launce-%s", LocustVersion, Version),
 		ClientID:               id,
 		HeartbeatInterval:      defaultHeartbeatInterval,
 		MetricsMonitorInterval: defaultMetricsMonitorInterval,
