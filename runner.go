@@ -113,6 +113,7 @@ func (l *LoadRunner) RegisterUser(name string, f func() User) {
 		user.Init(user, l, rep)
 		if err := processUser(ctx, user); err != nil {
 			if !errors.Is(err, context.Canceled) {
+				l.ReportException(err)
 			}
 		}
 	}
