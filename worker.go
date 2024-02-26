@@ -368,15 +368,41 @@ func (w *Worker) reportException(err error) {
 }
 
 func (w *Worker) startSpawnProcess(ctx context.Context, wg *sync.WaitGroup) {
-	wg.Add(1)
+	wg.Add(2)
+
+	relayCh := make(chan map[string]int64)
+
+	// Spawn に時間が掛かる場合もメッセージ受信の goroutine を止めないために中継用の goroutine を間に挟む
+	go func() {
+		defer wg.Done()
+
+		var ch chan map[string]int64
+		var spawnCount map[string]int64
+
+	loop:
+		for {
+			select {
+			case spawnCount = <-w.spawnCh:
+				ch = relayCh
+
+			case ch <- spawnCount:
+				spawnCount = nil
+				ch = nil
+
+			case <-ctx.Done():
+				break loop
+			}
+		}
+
+	}()
+
 	go func() {
 		defer wg.Done()
 
 	loop:
 		for {
 			select {
-			case spawnCount := <-w.spawnCh:
-
+			case spawnCount := <-relayCh:
 				// Runner がスタートしていない状態で spawn がリクエストされた場合は Runner をスタートする
 				if state := atomic.LoadInt64(&w.state); state != WorkerStateRunning && state != WorkerStateSpawning {
 					// Runner の Start 中に停止された場合は spawn を中断する
