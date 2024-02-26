@@ -355,7 +355,7 @@ func (w *Worker) SendMessage(typ string, data any) error {
 
 func (w *Worker) reportException(err error) {
 	trace := ""
-	var e Error
+	var e wrapError
 	if errors.As(err, &e) {
 		trace = e.StackTrace()
 	} else {

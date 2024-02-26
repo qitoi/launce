@@ -17,26 +17,25 @@
 package launce
 
 import (
-	"fmt"
 	"runtime"
 	"strconv"
 	"strings"
 )
 
-type Error struct {
+type wrapError struct {
 	err        error
 	stackTrace string
 }
 
-func (e Error) Error() string {
+func (e wrapError) Error() string {
 	return e.err.Error()
 }
 
-func (e Error) Unwrap() error {
+func (e wrapError) Unwrap() error {
 	return e.err
 }
 
-func (e Error) StackTrace() string {
+func (e wrapError) StackTrace() string {
 	return e.stackTrace
 }
 
@@ -56,7 +55,7 @@ func Wrap(err error) error {
 		builder.WriteString("\n")
 	}
 
-	return Error{
+	return wrapError{
 		err:        err,
 		stackTrace: builder.String(),
 	}
