@@ -26,53 +26,51 @@ var (
 
 type ParsedOptions struct {
 	// Common Options
-
-	Locustfile   string   `msgpack:"locustfile"`    // --locustfile
-	Config       string   `msgpack:"config"`        // --config
-	Host         string   `msgpack:"host"`          // --host
-	NumUsers     *int64   `msgpack:"num_users"`     // --users
-	SpawnRate    *float64 `msgpack:"spawn_rate"`    // --spawn-rate
-	HatchRate    int      `msgpack:"hatch_rate"`    // --hatch-rate
-	RunTime      *int64   `msgpack:"run_time"`      // --run-time
-	ListCommands bool     `msgpack:"list_commands"` // --list
+	Locustfile   string    `msgpack:"locustfile"`    // --locustfile
+	Config       string    `msgpack:"config"`        // --config
+	Host         string    `msgpack:"host"`          // --host
+	NumUsers     *int64    `msgpack:"num_users"`     // --users
+	SpawnRate    *float64  `msgpack:"spawn_rate"`    // --spawn-rate
+	HatchRate    int64     `msgpack:"hatch_rate"`    // --hatch-rate
+	RunTime      *int64    `msgpack:"run_time"`      // --run-time
+	ListCommands bool      `msgpack:"list_commands"` // --list
+	ConfigUsers  *[]string `msgpack:"config_users"`  // --config-users
 
 	// Web UI Options
-
 	WebHost     string  `msgpack:"web_host"`     // --web-host
-	WebPort     int     `msgpack:"web_port"`     // --web-port
+	WebPort     int64   `msgpack:"web_port"`     // --web-port
 	Headless    bool    `msgpack:"headless"`     // --headless
 	Autostart   bool    `msgpack:"autostart"`    // --autostart
-	Autoquit    int     `msgpack:"autoquit"`     // --autoquit
+	Autoquit    int64   `msgpack:"autoquit"`     // --autoquit
 	Headful     bool    `msgpack:"headful"`      // --headful
 	WebAuth     *string `msgpack:"web_auth"`     // --web-auth
-	TLSKey      string  `msgpack:"tls_key"`      // --tls-cert
+	WebLogin    bool    `msgpack:"web_login"`    // --web-login
 	TLSCert     string  `msgpack:"tls_cert"`     // --tls-key
+	TLSKey      string  `msgpack:"tls_key"`      // --tls-cert
 	ClassPicker bool    `msgpack:"class_picker"` // --class-picker
-	ModernUI    bool    `msgpack:"modern_ui"`    // --modern-ui
+	LegacyUI    bool    `msgpack:"legacy_ui"`    // --legacy-ui
 
 	// Master Options
-
 	Master               bool   `msgpack:"master"`                  // --master
 	MasterBindHost       string `msgpack:"master_bind_host"`        // --master-bind-host
-	MasterBindPort       int    `msgpack:"master_bind_port"`        // --master-bind-port
-	ExpectWorkers        int    `msgpack:"expect_workers"`          // --expect-workers
-	ExpectWorkersMaxWait int    `msgpack:"expect_workers_max_wait"` // --expect-worker-max-wait
+	MasterBindPort       int64  `msgpack:"master_bind_port"`        // --master-bind-port
+	ExpectWorkers        int64  `msgpack:"expect_workers"`          // --expect-workers
+	ExpectWorkersMaxWait int64  `msgpack:"expect_workers_max_wait"` // --expect-worker-max-wait
+	EnableRebalancing    bool   `msgpack:"enable_rebalancing"`      // --enable-rebalancing
 	ExpectSlaves         bool   `msgpack:"expect_slaves"`           // --expect-slaves
 
 	// Worker Options
-
 	Worker     bool   `msgpack:"worker"`      // --worker
+	Processes  *int64 `msgpack:"processes"`   // --processes
 	Slave      bool   `msgpack:"slave"`       // --slave
 	MasterHost string `msgpack:"master_host"` // --master-host
 	MasterPort int    `msgpack:"master_port"` // --master-port
 
 	// Tag Options
-
 	Tags        *[]string `msgpack:"tags"`         // --tags
 	ExcludeTags *[]string `msgpack:"exclude_tags"` // --exclude-tags
 
 	// Stats Options
-
 	CsvPrefix           *string `msgpack:"csv_prefix"`            // --csv
 	StatsHistoryEnabled bool    `msgpack:"stats_history_enabled"` // --csv-full-history
 	PrintStats          bool    `msgpack:"print_stats"`           // --print-stats
@@ -82,22 +80,18 @@ type ParsedOptions struct {
 	Json                bool    `msgpack:"json"`                  // --json
 
 	// Log Options
-
 	SkipLogSetup bool    `msgpack:"skip_log_setup"` // --skip-log-setup
 	Loglevel     string  `msgpack:"loglevel"`       // --loglevel
 	Logfile      *string `msgpack:"logfile"`        // --logfile
 
 	// Other Options
-
-	ShowTaskRatio     bool `msgpack:"show_task_ratio"`      // --show-task-ratio
-	ShowTaskRatioJson bool `msgpack:"show_task_ratio_json"` // --show-task-ratio-json
-	ExitCodeOnError   int  `msgpack:"exit_code_on_error"`   // --exit-code-on-error
-	StopTimeout       int  `msgpack:"stop_timeout"`         // --stop-timeout
-	EqualWeights      bool `msgpack:"equal_weights"`        // --equal-weights
-	EnableRebalancing bool `msgpack:"enable_rebalancing"`   // --enable-rebalancing
+	ShowTaskRatio     bool  `msgpack:"show_task_ratio"`      // --show-task-ratio
+	ShowTaskRatioJson bool  `msgpack:"show_task_ratio_json"` // --show-task-ratio-json
+	ExitCodeOnError   int64 `msgpack:"exit_code_on_error"`   // --exit-code-on-error
+	StopTimeout       int64 `msgpack:"stop_timeout"`         // --stop-timeout
+	EqualWeights      bool  `msgpack:"equal_weights"`        // --equal-weights
 
 	// User Classes Options
-
 	UserClasses []string `msgpack:"user_classes"` // <UserClass1 UserClass2>
 
 	raw msgpack.RawMessage `msgpack:"-"`
