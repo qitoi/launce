@@ -19,13 +19,13 @@ package launce
 import (
 	"fmt"
 	"runtime"
+	"strconv"
+	"strings"
 )
 
 type Error struct {
-	err      error
-	file     string
-	line     int
-	function string
+	err        error
+	stackTrace string
 }
 
 func (e Error) Error() string {
@@ -36,19 +36,28 @@ func (e Error) Unwrap() error {
 	return e.err
 }
 
-func (e Error) Traceback() string {
-	return fmt.Sprintf("%s:%d (%s)", e.file, e.line, e.function)
+func (e Error) StackTrace() string {
+	return e.stackTrace
 }
 
 func Wrap(err error) error {
-	pc := make([]uintptr, 1)
-	n := runtime.Callers(2, pc)
+	builder := strings.Builder{}
+
+	var pc [20]uintptr
+	n := runtime.Callers(2, pc[:])
 	frames := runtime.CallersFrames(pc[:n])
-	frame, _ := frames.Next()
-	return &Error{
-		err:      err,
-		file:     frame.File,
-		line:     frame.Line,
-		function: frame.Function,
+
+	for frame, ok := frames.Next(); ok; frame, ok = frames.Next() {
+		builder.WriteString(frame.Function)
+		builder.WriteString("\n    ")
+		builder.WriteString(frame.File)
+		builder.WriteString(":")
+		builder.WriteString(strconv.Itoa(frame.Line))
+		builder.WriteString("\n")
+	}
+
+	return Error{
+		err:        err,
+		stackTrace: builder.String(),
 	}
 }

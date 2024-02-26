@@ -357,7 +357,7 @@ func (w *Worker) reportException(err error) {
 	trace := ""
 	var e Error
 	if errors.As(err, &e) {
-		trace = e.Traceback()
+		trace = e.StackTrace()
 	} else {
 		trace = ""
 	}
