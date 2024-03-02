@@ -57,8 +57,8 @@ type Runner interface {
 
 // LoadRunner is an instance of load test runner.
 type LoadRunner struct {
-	// SpawnMode is the mode of spawning users.
-	SpawnMode spawner.SpawnMode
+	// RestartMode is the mode of spawning users.
+	RestartMode spawner.RestartMode
 
 	// StatsNotifyInterval is the interval to notify stats.
 	StatsNotifyInterval time.Duration
@@ -86,7 +86,7 @@ type LoadRunner struct {
 // NewLoadRunner returns a new LoadRunner.
 func NewLoadRunner() *LoadRunner {
 	return &LoadRunner{
-		SpawnMode:           spawner.SpawnOnce,
+		RestartMode:         spawner.RestartNever,
 		StatsNotifyInterval: defaultStatsNotifyInterval,
 
 		userSpawners:    map[string]*spawner.Spawner{},
@@ -135,7 +135,7 @@ func (l *LoadRunner) RegisterUser(name string, f func() User) {
 			}
 		}
 	}
-	l.userSpawners[name] = spawner.New(spawnFunc, l.SpawnMode)
+	l.userSpawners[name] = spawner.New(spawnFunc, l.RestartMode)
 }
 
 // RegisterMessage registers a custom message handler.

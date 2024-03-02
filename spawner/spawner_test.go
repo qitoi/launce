@@ -81,13 +81,13 @@ func (s *SpawnTask) WaitStop(n int) {
 	s.stopCond.L.Unlock()
 }
 
-func NewSpawner(mode spawner.SpawnMode) (*spawner.Spawner, *SpawnTask) {
+func NewSpawner(mode spawner.RestartMode) (*spawner.Spawner, *SpawnTask) {
 	st := NewSpawnTask()
 	return spawner.New(st.Run, mode), st
 }
 
 func TestSpawner_Start(t *testing.T) {
-	s, st := NewSpawner(spawner.SpawnOnce)
+	s, st := NewSpawner(spawner.RestartNever)
 
 	s.Start()
 	defer func() {
@@ -103,7 +103,7 @@ func TestSpawner_Start(t *testing.T) {
 }
 
 func TestSpawner_Cap_BeforeStart(t *testing.T) {
-	s, st := NewSpawner(spawner.SpawnOnce)
+	s, st := NewSpawner(spawner.RestartNever)
 
 	s.Cap(3)
 	s.Start()
@@ -129,7 +129,7 @@ func TestSpawner_Cap_BeforeStart(t *testing.T) {
 }
 
 func TestSpawner_Cap_AfterStart(t *testing.T) {
-	s, st := NewSpawner(spawner.SpawnOnce)
+	s, st := NewSpawner(spawner.RestartNever)
 
 	s.Start()
 	s.Cap(3)
@@ -155,7 +155,7 @@ func TestSpawner_Cap_AfterStart(t *testing.T) {
 }
 
 func TestSpawner_Cap_Extension(t *testing.T) {
-	s, st := NewSpawner(spawner.SpawnOnce)
+	s, st := NewSpawner(spawner.RestartNever)
 
 	s.Cap(3)
 	s.Start()
@@ -191,7 +191,7 @@ func TestSpawner_Cap_Extension(t *testing.T) {
 }
 
 func TestSpawner_Cap_Shrink(t *testing.T) {
-	s, st := NewSpawner(spawner.SpawnOnce)
+	s, st := NewSpawner(spawner.RestartNever)
 
 	s.Cap(3)
 	s.Start()
@@ -227,7 +227,7 @@ func TestSpawner_Cap_Shrink(t *testing.T) {
 }
 
 func TestSpawner_Cap_ShrinkMultiple(t *testing.T) {
-	s, st := NewSpawner(spawner.SpawnOnce)
+	s, st := NewSpawner(spawner.RestartNever)
 
 	s.Cap(6)
 	s.Start()
@@ -280,7 +280,7 @@ func TestSpawner_Cap_ShrinkMultiple(t *testing.T) {
 }
 
 func TestSpawner_SpawnPersistent(t *testing.T) {
-	s, st := NewSpawner(spawner.SpawnPersistent)
+	s, st := NewSpawner(spawner.RestartAlways)
 
 	s.Cap(1)
 	s.Start()

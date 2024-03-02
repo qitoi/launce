@@ -24,22 +24,22 @@ import (
 	"sync/atomic"
 )
 
-// SpawnMode is a mode for spawning users.
-type SpawnMode int
+// RestartMode is a mode for spawning users.
+type RestartMode int
 
 // SpawnFunc is a target function for concurrent execution.
 type SpawnFunc func(ctx context.Context)
 
 const (
-	// SpawnOnce is a mode where goroutines are not restarted once they finish.
-	SpawnOnce SpawnMode = iota
-	// SpawnPersistent is a mode that ensures goroutines are automatically restarted to maintain the capacity.
-	SpawnPersistent
+	// RestartNever is a mode where goroutines are not restarted once they finish.
+	RestartNever RestartMode = iota
+	// RestartAlways is a mode that ensures goroutines are automatically restarted to maintain the capacity.
+	RestartAlways
 )
 
 // Spawner is a goroutine manager.
 type Spawner struct {
-	mode      SpawnMode
+	mode      RestartMode
 	spawnFunc SpawnFunc
 	count     int
 
@@ -54,7 +54,7 @@ type Spawner struct {
 }
 
 // New returns a new Spawner.
-func New(f SpawnFunc, mode SpawnMode) *Spawner {
+func New(f SpawnFunc, mode RestartMode) *Spawner {
 	return &Spawner{
 		mode:      mode,
 		spawnFunc: f,
@@ -125,9 +125,9 @@ func (s *Spawner) spawnWorker(count int) {
 	s.migrateSpawnCh(oldSpawnCh, spawnCh)
 	s.users.Cap(count)
 
-	if s.mode == SpawnOnce {
+	if s.mode == RestartNever {
 		go s.spawnWorkerOnce(spawnCh, stopCh, stopWaitCh)
-	} else if s.mode == SpawnPersistent {
+	} else if s.mode == RestartAlways {
 		go s.spawnWorkerPersistent(spawnCh, stopCh, stopWaitCh)
 	}
 }
