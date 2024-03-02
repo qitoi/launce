@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 
+// Package spawner implements dynamic goroutine management.
 package spawner
 
 import (
@@ -23,15 +24,20 @@ import (
 	"sync/atomic"
 )
 
+// SpawnMode is a mode for spawning users.
 type SpawnMode int
 
+// SpawnFunc is a target function for concurrent execution.
+type SpawnFunc func(ctx context.Context)
+
 const (
+	// SpawnOnce is a mode where goroutines are not restarted once they finish.
 	SpawnOnce SpawnMode = iota
+	// SpawnPersistent is a mode that ensures goroutines are automatically restarted to maintain the capacity.
 	SpawnPersistent
 )
 
-type SpawnFunc func(ctx context.Context)
-
+// Spawner is a goroutine manager.
 type Spawner struct {
 	mode      SpawnMode
 	spawnFunc SpawnFunc
@@ -47,6 +53,7 @@ type Spawner struct {
 	spawned int64
 }
 
+// New returns a new Spawner.
 func New(f SpawnFunc, mode SpawnMode) *Spawner {
 	return &Spawner{
 		mode:      mode,
@@ -54,6 +61,7 @@ func New(f SpawnFunc, mode SpawnMode) *Spawner {
 	}
 }
 
+// Cap sets the maximum number of concurrent goroutines.
 func (s *Spawner) Cap(count int) {
 	if s.count == count {
 		return
@@ -70,21 +78,25 @@ func (s *Spawner) Cap(count int) {
 	}
 }
 
+// Count returns the number of currently running goroutines.
 func (s *Spawner) Count() int64 {
 	return s.spawned
 }
 
+// Start starts the goroutine manager.
 func (s *Spawner) Start() {
 	s.Stop()
 	s.spawnWorker(s.count)
 }
 
+// Stop stops the goroutine manager.
 func (s *Spawner) Stop() {
 	if s.stop != nil {
 		s.stop()
 	}
 }
 
+// StopAllUsers stops all running goroutines.
 func (s *Spawner) StopAllUsers() {
 	s.users.Clear()
 }

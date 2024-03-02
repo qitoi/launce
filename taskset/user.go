@@ -23,11 +23,15 @@ import (
 	"github.com/qitoi/launce"
 )
 
+// UserRequirement is an interface that structs must implement to use User.
 type UserRequirement interface {
 	launce.BaseUserRequirement
+
+	// TaskSet returns the taskset to be processed.
 	TaskSet() TaskSet
 }
 
+// User processes taskset.
 type User struct {
 	launce.BaseUser
 	taskset TaskSet

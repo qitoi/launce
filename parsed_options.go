@@ -24,6 +24,7 @@ var (
 	_ msgpack.CustomDecoder = (*ParsedOptions)(nil)
 )
 
+// ParsedOptions is the command line options of locust.
 type ParsedOptions struct {
 	// Common Options
 	Locustfile   string    `msgpack:"locustfile"`    // --locustfile
@@ -97,6 +98,7 @@ type ParsedOptions struct {
 	raw msgpack.RawMessage `msgpack:"-"`
 }
 
+// DecodeMsgpack decodes the msgpack data.
 func (p *ParsedOptions) DecodeMsgpack(dec *msgpack.Decoder) error {
 	// avoid unmarshal infinite loop
 	type parsedOptions ParsedOptions
@@ -115,6 +117,7 @@ func (p *ParsedOptions) DecodeMsgpack(dec *msgpack.Decoder) error {
 	return nil
 }
 
+// Extract extracts the parsed options to the given value.
 func (p *ParsedOptions) Extract(v interface{}) error {
 	return msgpack.Unmarshal(p.raw, v)
 }

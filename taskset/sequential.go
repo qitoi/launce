@@ -26,12 +26,14 @@ var (
 	_ TaskSet = (*Sequential)(nil)
 )
 
+// Sequential is a taskset that processes tasks in order.
 type Sequential struct {
 	tasks    []Task
 	filtered []Task
 	index    int
 }
 
+// NewSequential returns a new Sequential TaskSet.
 func NewSequential(tasks ...Task) *Sequential {
 	s := &Sequential{}
 	s.Init(tasks)

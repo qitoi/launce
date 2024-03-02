@@ -20,8 +20,10 @@ import (
 	"time"
 )
 
+// Entries represents collection of Entry for request types.
 type Entries map[EntryKey]*Entry
 
+// Merge merges statistics from src into this Entries
 func (e *Entries) Merge(src Entries) {
 	for k, v := range src {
 		if _, ok := (*e)[k]; !ok {
@@ -31,6 +33,7 @@ func (e *Entries) Merge(src Entries) {
 	}
 }
 
+// Aggregate aggregates all statistics for request types into one Entry.
 func (e *Entries) Aggregate() *Entry {
 	total := newEntry()
 	for _, n := range *e {
@@ -39,11 +42,13 @@ func (e *Entries) Aggregate() *Entry {
 	return total
 }
 
+// EntryKey is request type.
 type EntryKey struct {
 	Method string
 	Name   string
 }
 
+// Entry contains statistics for request.
 type Entry struct {
 	StartTime int64 // [ns]
 
@@ -63,6 +68,7 @@ type Entry struct {
 	ResponseTimes map[int64]int64
 }
 
+// Add adds result of request to Entry.
 func (e *Entry) Add(now time.Time, responseTime time.Duration, contentLength int64, err error) {
 	t := now.Unix()
 	nowNano := now.UnixNano()
@@ -108,6 +114,7 @@ func (e *Entry) Add(now time.Time, responseTime time.Duration, contentLength int
 	}
 }
 
+// Merge merges statistics from src into this Entry
 func (e *Entry) Merge(src *Entry) {
 	if e.StartTime == 0 || e.StartTime > src.StartTime {
 		e.StartTime = src.StartTime

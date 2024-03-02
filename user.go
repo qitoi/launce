@@ -25,18 +25,22 @@ import (
 )
 
 var (
+	// StopUser is an error that stops the user.
 	StopUser = errors.New("stop user")
 )
 
 const (
+	// NoneResponseTime is a special value that represents no response time.
 	NoneResponseTime = time.Duration(-1)
 )
 
+// Reporter is the interface that reports the result of a request.
 type Reporter interface {
 	Report(requestType, name string, responseTime time.Duration, contentLength int64)
 	ReportError(requestType, name string, responseTime time.Duration, contentLength int64, err error)
 }
 
+// User is the interface that behaves as a locust user.
 type User interface {
 	Reporter
 
@@ -48,17 +52,20 @@ type User interface {
 	Wait(ctx context.Context) error
 }
 
+// BaseUserRequirement is the interface that structs must implement to use BaseUser.
 type BaseUserRequirement interface {
 	User
 	WaitTime() WaitTimeFunc
 }
 
+// BaseUser is a base implementation of User.
 type BaseUser struct {
 	waiter   internal.Waiter
 	runner   Runner
 	reporter Reporter
 }
 
+// Init initializes the user.
 func (b *BaseUser) Init(u User, r Runner, rep Reporter) {
 	if bu, ok := u.(BaseUserRequirement); !ok {
 		panic("not implemented launce.BaseUserRequirement")
@@ -69,26 +76,32 @@ func (b *BaseUser) Init(u User, r Runner, rep Reporter) {
 	}
 }
 
+// Runner returns the runner.
 func (b *BaseUser) Runner() Runner {
 	return b.runner
 }
 
+// Wait waits for the time returned by WaitTime.
 func (b *BaseUser) Wait(ctx context.Context) error {
 	return b.waiter.Wait(ctx)
 }
 
+// OnStart is called when the user starts.
 func (b *BaseUser) OnStart(ctx context.Context) error {
 	return nil
 }
 
+// OnStop is called when the user stops.
 func (b *BaseUser) OnStop(ctx context.Context) error {
 	return nil
 }
 
+// Report reports the result of a request.
 func (b *BaseUser) Report(requestType, name string, responseTime time.Duration, contentLength int64) {
 	b.reporter.Report(requestType, name, responseTime, contentLength)
 }
 
+// ReportError reports the result of a request with an error.
 func (b *BaseUser) ReportError(requestType, name string, responseTime time.Duration, contentLength int64, err error) {
 	b.reporter.ReportError(requestType, name, responseTime, contentLength, err)
 }

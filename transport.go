@@ -23,10 +23,15 @@ import (
 	"github.com/go-zeromq/zmq4"
 )
 
+// Transport is the interface that communicates with the master.
 type Transport interface {
+	// Open opens the connection to the master.
 	Open(ctx context.Context, clientID string) error
+	// Close closes the connection to the master.
 	Close() error
+	// Send sends a message to the master.
 	Send(msg []byte) error
+	// Receive receives a message from the master.
 	Receive() ([]byte, error)
 }
 
@@ -34,6 +39,7 @@ var (
 	_ Transport = (*ZmqTransport)(nil)
 )
 
+// ZmqTransport is transport that uses ZeroMQ.
 type ZmqTransport struct {
 	Host string
 	Port int
@@ -42,6 +48,7 @@ type ZmqTransport struct {
 	socket zmq4.Socket
 }
 
+// NewZmqTransport returns a new ZmqTransport.
 func NewZmqTransport(host string, port int, opts ...zmq4.Option) *ZmqTransport {
 	return &ZmqTransport{
 		Host: host,
@@ -51,6 +58,7 @@ func NewZmqTransport(host string, port int, opts ...zmq4.Option) *ZmqTransport {
 	}
 }
 
+// Open opens the connection to the master.
 func (t *ZmqTransport) Open(ctx context.Context, clientID string) error {
 	opts := append(t.opts, zmq4.WithID(zmq4.SocketIdentity(clientID)))
 	socket := zmq4.NewDealer(ctx, opts...)
@@ -62,14 +70,17 @@ func (t *ZmqTransport) Open(ctx context.Context, clientID string) error {
 	return nil
 }
 
+// Close closes the connection to the master.
 func (t *ZmqTransport) Close() error {
 	return t.socket.Close()
 }
 
+// Send sends a message to the master.
 func (t *ZmqTransport) Send(msg []byte) error {
 	return t.socket.Send(zmq4.NewMsg(msg))
 }
 
+// Receive receives a message from the master.
 func (t *ZmqTransport) Receive() ([]byte, error) {
 	msg, err := t.socket.Recv()
 	if err != nil {

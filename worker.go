@@ -14,6 +14,9 @@
  *  limitations under the License.
  */
 
+// Package launce is [Locust] worker library written in Go.
+//
+// [Locust]: https://locust.io/
 package launce
 
 import (
@@ -73,17 +76,30 @@ func generateClientID() (string, error) {
 	return hostname + "_" + uuid.NewString(), nil
 }
 
+// Worker provides the functionality of a Locust worker.
 type Worker struct {
-	Version                string
-	ClientID               string
-	HeartbeatInterval      time.Duration
-	MetricsMonitorInterval time.Duration
+	// Version is the version of the worker
+	Version string
+
+	// ClientID is the unique identifier of the worker.
+	ClientID string
+
+	// HeartbeatInterval is the interval at which the worker sends a heartbeat message to the master.
+	HeartbeatInterval time.Duration
+
+	// MasterHeartbeatTimeout is the timeout for the heartbeat from the master.
 	MasterHeartbeatTimeout time.Duration
-	StatsReportInterval    time.Duration
+
+	// MetricsMonitorInterval is the interval at which the worker monitors the process metrics.
+	MetricsMonitorInterval time.Duration
+
+	// StatsReportInterval is the interval at which the worker sends statistics to the master.
+	StatsReportInterval time.Duration
+
+	// StatsAggregateInterval is the interval at which the worker aggregates statistics of users.
 	StatsAggregateInterval time.Duration
 
 	runner      *LoadRunner
-	cancel      atomic.Value
 	index       int64
 	state       WorkerState
 	transport   Transport
@@ -92,8 +108,12 @@ type Worker struct {
 	ackCh       chan struct{}
 	heartbeatCh chan struct{}
 	procInfo    *processInfo
+
+	// cancel is the context cancel function of the join process.
+	cancel atomic.Value
 }
 
+// NewWorker creates an instance of Worker.
 func NewWorker(transport Transport) (*Worker, error) {
 	id, err := generateClientID()
 	if err != nil {
@@ -130,6 +150,7 @@ func NewWorker(transport Transport) (*Worker, error) {
 	return w, nil
 }
 
+// Join connects to the master and starts the worker processes.
 func (w *Worker) Join() error {
 	var wg sync.WaitGroup
 
@@ -180,6 +201,7 @@ func (w *Worker) Join() error {
 	return nil
 }
 
+// Stop stops the load test.
 func (w *Worker) Stop() {
 	if atomic.LoadInt64(&w.state) == WorkerStateStopped {
 		return
@@ -189,6 +211,7 @@ func (w *Worker) Stop() {
 	atomic.StoreInt64(&w.state, WorkerStateStopped)
 }
 
+// Quit stops the worker.
 func (w *Worker) Quit() {
 	w.Stop()
 	if f := w.cancel.Load(); f != nil {
@@ -196,6 +219,50 @@ func (w *Worker) Quit() {
 			cancel()
 		}
 	}
+}
+
+// RegisterUser registers user.
+func (w *Worker) RegisterUser(name string, f func() User) {
+	w.runner.RegisterUser(name, f)
+}
+
+// RegisterMessage registers custom message handler.
+func (w *Worker) RegisterMessage(typ string, handler MessageHandler) {
+	w.runner.RegisterMessage(typ, handler)
+}
+
+// OnTestStart registers function to be called when the test starts.
+func (w *Worker) OnTestStart(f func(ctx context.Context) error) {
+	w.runner.OnTestStart(f)
+}
+
+// OnTestStop registers function to be called when the test stops.
+func (w *Worker) OnTestStop(f func(ctx context.Context)) {
+	w.runner.OnTestStop(f)
+}
+
+// Index returns the index of the worker.
+func (w *Worker) Index() int64 {
+	return atomic.LoadInt64(&w.index)
+}
+
+// State returns the state of the worker.
+func (w *Worker) State() WorkerState {
+	return atomic.LoadInt64(&w.state)
+}
+
+// SendMessage sends message to the master.
+func (w *Worker) SendMessage(typ string, data any) error {
+	msg := Message{
+		Type:   typ,
+		Data:   data,
+		NodeID: w.ClientID,
+	}
+	b, err := encodeMessage(msg)
+	if err != nil {
+		return err
+	}
+	return w.transport.Send(b)
 }
 
 func (w *Worker) open(ctx context.Context) error {
@@ -244,6 +311,15 @@ loop:
 	return nil
 }
 
+func (w *Worker) recv() (ReceivedMessage, error) {
+	b, err := w.transport.Receive()
+	if err != nil {
+		return ReceivedMessage{}, err
+	}
+	return decodeMessage(b)
+}
+
+// startMessageProcess starts the process of receiving and processing messages from the master.
 func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 	wg.Add(1)
 
@@ -315,57 +391,6 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 			}
 		}
 	}()
-}
-
-func (w *Worker) RegisterUser(name string, f func() User) {
-	w.runner.RegisterUser(name, f)
-}
-
-func (w *Worker) RegisterMessage(typ string, handler MessageHandler) {
-	w.runner.RegisterMessage(typ, handler)
-}
-
-func (w *Worker) OnTestStart(f func(ctx context.Context) error) {
-	w.runner.OnTestStart(f)
-}
-
-func (w *Worker) OnTestStop(f func(ctx context.Context)) {
-	w.runner.OnTestStop(f)
-}
-
-func (w *Worker) Index() int64 {
-	return atomic.LoadInt64(&w.index)
-}
-
-func (w *Worker) State() WorkerState {
-	return atomic.LoadInt64(&w.state)
-}
-
-func (w *Worker) SendMessage(typ string, data any) error {
-	msg := Message{
-		Type:   typ,
-		Data:   data,
-		NodeID: w.ClientID,
-	}
-	b, err := encodeMessage(msg)
-	if err != nil {
-		return err
-	}
-	return w.transport.Send(b)
-}
-
-func (w *Worker) reportException(err error) {
-	trace := ""
-	var e wrapError
-	if errors.As(err, &e) {
-		trace = e.StackTrace()
-	} else {
-		trace = ""
-	}
-	_ = w.SendMessage(messageException, exceptionPayload{
-		Msg:       err.Error(),
-		Traceback: trace,
-	})
 }
 
 func (w *Worker) startSpawnProcess(ctx context.Context, wg *sync.WaitGroup) {
@@ -568,12 +593,18 @@ func (w *Worker) startMetricsMonitorProcess(ctx context.Context, wg *sync.WaitGr
 	}()
 }
 
-func (w *Worker) recv() (ReceivedMessage, error) {
-	b, err := w.transport.Receive()
-	if err != nil {
-		return ReceivedMessage{}, err
+func (w *Worker) reportException(err error) {
+	trace := ""
+	var e wrapError
+	if errors.As(err, &e) {
+		trace = e.StackTrace()
+	} else {
+		trace = ""
 	}
-	return decodeMessage(b)
+	_ = w.SendMessage(messageException, exceptionPayload{
+		Msg:       err.Error(),
+		Traceback: trace,
+	})
 }
 
 func convertStatisticsPayload(entries stats.Entries, total *stats.Entry, errors stats.Errors) *statsPayload {

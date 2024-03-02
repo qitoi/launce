@@ -14,17 +14,20 @@
  *  limitations under the License.
  */
 
+// Package stats implements statistics for Locust.
 package stats
 
 import (
 	"time"
 )
 
+// Stats represents statistics of request results.
 type Stats struct {
 	Entries Entries
 	Errors  Errors
 }
 
+// New returns a new Stats.
 func New() *Stats {
 	return &Stats{
 		Entries: Entries{},
@@ -32,6 +35,7 @@ func New() *Stats {
 	}
 }
 
+// Flush returns the current statistics and clears the statistics.
 func (s *Stats) Flush() (Entries, *Entry, Errors) {
 	entries, errors := s.Entries, s.Errors
 	s.Entries = Entries{}
@@ -40,11 +44,13 @@ func (s *Stats) Flush() (Entries, *Entry, Errors) {
 	return entries, total, errors
 }
 
+// Clear clears the statistics.
 func (s *Stats) Clear() {
 	s.Entries = Entries{}
 	s.Errors = Errors{}
 }
 
+// Add adds a request to the statistics.
 func (s *Stats) Add(now time.Time, requestType, name string, responseTime time.Duration, contentLength int64, err error) {
 	var key = EntryKey{
 		Method: requestType,
@@ -60,6 +66,7 @@ func (s *Stats) Add(now time.Time, requestType, name string, responseTime time.D
 	}
 }
 
+// Merge merges the statistics from src.
 func (s *Stats) Merge(src *Stats) {
 	s.Entries.Merge(src.Entries)
 	s.Errors.Merge(src.Errors)

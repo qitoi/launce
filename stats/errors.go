@@ -21,8 +21,10 @@ import (
 	"fmt"
 )
 
+// Errors is an occurrence count of errors.
 type Errors map[ErrorKey]int64
 
+// Add adds an error to the occurrence count.
 func (e *Errors) Add(method, name string, err error) {
 	key := ErrorKey{method, name, err.Error()}
 	if _, ok := (*e)[key]; !ok {
@@ -31,6 +33,7 @@ func (e *Errors) Add(method, name string, err error) {
 	(*e)[key] += 1
 }
 
+// Merge merges the occurrence count of errors.
 func (e *Errors) Merge(src Errors) {
 	for k, v := range src {
 		if _, ok := (*e)[k]; !ok {

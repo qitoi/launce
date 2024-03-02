@@ -25,20 +25,24 @@ var (
 	nowFunc = time.Now
 )
 
+// WaitTimeFunc represents a wait time function for users or tasks.
 type WaitTimeFunc func() time.Duration
 
+// Between returns a WaitTimeFunc that returns a random wait time between min and max.
 func Between(min, max time.Duration) WaitTimeFunc {
 	return func() time.Duration {
 		return time.Duration(rand.Int63n(max.Nanoseconds()-min.Nanoseconds()) + min.Nanoseconds())
 	}
 }
 
+// Constant returns a WaitTimeFunc that returns the constant wait time.
 func Constant(d time.Duration) WaitTimeFunc {
 	return func() time.Duration {
 		return d
 	}
 }
 
+// ConstantPacing returns a WaitTimeFunc that calculates wait time to ensure the interval between task executions is d.
 func ConstantPacing(d time.Duration) WaitTimeFunc {
 	var lastRun = nowFunc()
 	var lastWaitTime time.Duration
@@ -55,6 +59,7 @@ func ConstantPacing(d time.Duration) WaitTimeFunc {
 	}
 }
 
+// ConstantThroughput returns a WaitTimeFunc that returns wait time that makes the number of task executions per second equal to taskRunsPerSecond.
 func ConstantThroughput(taskRunsPerSecond int) WaitTimeFunc {
 	return ConstantPacing(time.Second / time.Duration(taskRunsPerSecond))
 }

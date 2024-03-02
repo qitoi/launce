@@ -29,18 +29,22 @@ type reportRequest struct {
 	Error         error
 }
 
+// Reporter manages process of reporting statistics of request results.
 type Reporter struct {
 	ch chan<- reportRequest
 }
 
+// Start starts reporting process.
 func (r *Reporter) Start(statsCh chan<- *Stats, reportInterval time.Duration) {
 	r.ch = r.start(statsCh, reportInterval)
 }
 
+// Stop stops reporting process.
 func (r *Reporter) Stop() {
 	close(r.ch)
 }
 
+// Report reports statistics of request.
 func (r *Reporter) Report(requestType, name string, responseTime time.Duration, contentLength int64) {
 	r.ch <- reportRequest{
 		Now:           time.Now(),
@@ -52,6 +56,7 @@ func (r *Reporter) Report(requestType, name string, responseTime time.Duration, 
 	}
 }
 
+// ReportError reports statistics of request with error.
 func (r *Reporter) ReportError(requestType, name string, responseTime time.Duration, contentLength int64, err error) {
 	r.ch <- reportRequest{
 		Now:           time.Now(),

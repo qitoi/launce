@@ -43,6 +43,7 @@ func GetTags(task Task) []string {
 	return nil
 }
 
+// Tag returns a task with tags.
 func Tag(task Task, tags ...string) Task {
 	t := GetTags(task)
 	return &taggedTask{

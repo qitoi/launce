@@ -39,6 +39,7 @@ func (e wrapError) StackTrace() string {
 	return e.stackTrace
 }
 
+// Wrap returns error with stack trace.
 func Wrap(err error) error {
 	builder := strings.Builder{}
 

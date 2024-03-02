@@ -26,16 +26,19 @@ var (
 	_ Task = TaskFunc(nil)
 )
 
+// Task represents a unit of actions.
 type Task interface {
 	Run(ctx context.Context, u launce.User, s Scheduler) error
 }
 
+// TaskFunc is an adapter to allow the use of ordinary functions as Task.
 type TaskFunc func(ctx context.Context, u launce.User, s Scheduler) error
 
 func (t TaskFunc) Run(ctx context.Context, u launce.User, s Scheduler) error {
 	return t(ctx, u, s)
 }
 
+// Scheduler is the interface for scheduling tasks.
 type Scheduler interface {
 	Schedule(task Task, first bool)
 }

@@ -27,11 +27,13 @@ var (
 	_ TaskSet = (*Random)(nil)
 )
 
+// Random is a taskset that processes tasks randomly.
 type Random struct {
 	tasks    []Task
 	filtered []Task
 }
 
+// NewRandom returns a new Random TaskSet.
 func NewRandom(tasks ...Task) *Random {
 	r := &Random{}
 	r.Init(tasks)

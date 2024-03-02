@@ -29,6 +29,7 @@ func (w *weightedTask) Unwrap() Task {
 	return w.Task
 }
 
+// Weight returns a task with weight for random taskset.
 func Weight(task Task, weight int) Task {
 	return &weightedTask{
 		Task:   task,

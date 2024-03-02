@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 
+// Package taskset implements utilities for structured test scenarios.
 package taskset
 
 import (
@@ -25,12 +26,17 @@ import (
 )
 
 var (
-	RescheduleTask              = errors.New("reschedule task")
-	RescheduleTaskImmediately   = errors.New("reschedule task immediately")
-	InterruptTaskSet            = errors.New("interrupt taskset")
+	// RescheduleTask is an error to reschedule task, equivalent to return nil.
+	RescheduleTask = errors.New("reschedule task")
+	// RescheduleTaskImmediately is an error to reschedule task without waiting.
+	RescheduleTaskImmediately = errors.New("reschedule task immediately")
+	// InterruptTaskSet is an error to exit from the current TaskSet.
+	InterruptTaskSet = errors.New("interrupt taskset")
+	// InterruptTaskSetImmediately  is an error to exit from the current TaskSet without waiting.
 	InterruptTaskSetImmediately = errors.New("interrupt taskset immediately")
 )
 
+// TaskSet represents a set of tasks used in structured test scenarios.
 type TaskSet interface {
 	Task
 
