@@ -360,13 +360,15 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 				lastReceivedSpawnTimestamp = payload.Timestamp
 
 				w.runner.SetHost(payload.Host)
-				w.runner.SetParsedOptions(&payload.ParsedOptions)
+				w.runner.SetTags(payload.ParsedOptions.Tags)
+				w.runner.SetExcludeTags(payload.ParsedOptions.ExcludeTags)
 
 				w.spawnCh <- payload.UserClassesCount
 
 			case messageStop:
-				w.runner.SetParsedOptions(nil)
 				w.runner.Stop()
+				w.runner.SetTags(nil)
+				w.runner.SetExcludeTags(nil)
 				_ = w.SendMessage(messageClientStopped, nil)
 				atomic.StoreInt64(&w.state, WorkerStateInit)
 				_ = w.SendMessage(messageClientReady, w.Version)

@@ -50,7 +50,8 @@ type MessageHandler func(msg ReceivedMessage)
 // Runner is the interface that runs the test.
 type Runner interface {
 	Host() string
-	ParsedOptions() *ParsedOptions
+	Tags() *[]string
+	ExcludeTags() *[]string
 	ReportException(err error)
 	SendMessage(typ string, data any) error
 }
@@ -72,8 +73,9 @@ type LoadRunner struct {
 	userSpawners map[string]*spawner.Spawner
 	statsCh      chan *stats.Stats
 
-	host          atomic.Value
-	parsedOptions atomic.Pointer[ParsedOptions]
+	host        atomic.Value
+	tags        atomic.Pointer[[]string]
+	excludeTags atomic.Pointer[[]string]
 
 	testStartHandlers []func(ctx context.Context) error
 	testStopHandlers  []func(ctx context.Context)
@@ -110,14 +112,20 @@ func (l *LoadRunner) SetHost(host string) {
 	l.host.Store(host)
 }
 
-// ParsedOptions returns the parsed_options.
-func (l *LoadRunner) ParsedOptions() *ParsedOptions {
-	return l.parsedOptions.Load()
+func (l *LoadRunner) Tags() *[]string {
+	return l.tags.Load()
 }
 
-// SetParsedOptions sets the parsed_options.
-func (l *LoadRunner) SetParsedOptions(options *ParsedOptions) {
-	l.parsedOptions.Store(options)
+func (l *LoadRunner) SetTags(tags *[]string) {
+	l.tags.Store(tags)
+}
+
+func (l *LoadRunner) ExcludeTags() *[]string {
+	return l.excludeTags.Load()
+}
+
+func (l *LoadRunner) SetExcludeTags(tags *[]string) {
+	l.tags.Store(tags)
 }
 
 // RegisterUser registers a user class.

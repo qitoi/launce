@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"reflect"
-	"slices"
 	"sync"
 	"testing"
 
@@ -268,60 +267,6 @@ func TestLoadRunner_Host(t *testing.T) {
 
 	if h := <-ch; h != host {
 		t.Fatalf("host got:%v want:%v", h, host)
-	}
-}
-
-func TestLoadRunner_ParsedOptions(t *testing.T) {
-	masterHost := "localhost"
-	tags := []string{"tag1", "tag2"}
-
-	options := launce.ParsedOptions{
-		Tags:       &tags,
-		MasterHost: masterHost,
-	}
-
-	r := launce.NewLoadRunner()
-	r.SetParsedOptions(&options)
-
-	p := r.ParsedOptions()
-	if p.MasterHost != masterHost {
-		t.Fatalf("ParsedOptions.MasterHost got:%v want:%v", p.MasterHost, masterHost)
-	}
-	if p.Tags == nil {
-		t.Fatalf("ParsedOptions.Tags got:%v want:%v", p.Tags, tags)
-	} else if slices.Compare(*p.Tags, tags) != 0 {
-		t.Fatalf("ParsedOptions.Tags got:%v want:%v", *p.Tags, tags)
-	}
-
-	ch := make(chan *launce.ParsedOptions)
-
-	r.RegisterUser("TestUser", func() launce.User {
-		u := &user{}
-		u.ProcessFunc = func(ctx context.Context) error {
-			ch <- u.Runner().ParsedOptions()
-			close(ch)
-			return launce.StopUser
-		}
-		return u
-	})
-
-	if err := r.Start(); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := r.Spawn("TestUser", 1); err != nil {
-		t.Fatal(err)
-	}
-
-	p = <-ch
-
-	if p.MasterHost != masterHost {
-		t.Fatalf("ParsedOptions.MasterHost got:%v want:%v", p.MasterHost, masterHost)
-	}
-	if p.Tags == nil {
-		t.Fatalf("ParsedOptions.Tags got:%v want:%v", p.Tags, tags)
-	} else if slices.Compare(*p.Tags, tags) != 0 {
-		t.Fatalf("ParsedOptions.Tags got:%v want:%v", *p.Tags, tags)
 	}
 }
 

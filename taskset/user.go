@@ -47,14 +47,15 @@ func (tu *User) Init(u launce.User, r launce.Runner, rep launce.Reporter) {
 }
 
 func (tu *User) OnStart(ctx context.Context) error {
-	option := tu.Runner().ParsedOptions()
+	tags := tu.Runner().Tags()
+	exTags := tu.Runner().ExcludeTags()
 
 	var opts []filterOption
-	if option.Tags != nil {
-		opts = append(opts, includeTags(*option.Tags...))
+	if tags != nil {
+		opts = append(opts, includeTags(*tags...))
 	}
-	if option.ExcludeTags != nil {
-		opts = append(opts, excludeTags(*option.ExcludeTags...))
+	if exTags != nil {
+		opts = append(opts, excludeTags(*exTags...))
 	}
 
 	tu.taskset.FilterTasks(func(tasks []Task) []Task {
