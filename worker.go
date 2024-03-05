@@ -68,6 +68,10 @@ var (
 	}
 )
 
+var (
+	_ Runner = (*Worker)(nil)
+)
+
 func generateClientID() (string, error) {
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -99,15 +103,19 @@ type Worker struct {
 	// StatsAggregateInterval is the interval at which the worker aggregates statistics of users.
 	StatsAggregateInterval time.Duration
 
-	runner      *LoadRunner
-	index       int64
-	state       WorkerState
-	transport   Transport
-	stats       *stats.Stats
-	spawnCh     chan map[string]int64
-	ackCh       chan struct{}
-	heartbeatCh chan struct{}
-	procInfo    *processInfo
+	loadGenerator *LoadGenerator
+	index         int64
+	state         WorkerState
+	transport     Transport
+	stats         *stats.Stats
+	spawnCh       chan map[string]int64
+	ackCh         chan struct{}
+	heartbeatCh   chan struct{}
+	procInfo      *processInfo
+
+	host            atomic.Value
+	parsedOptions   atomic.Pointer[ParsedOptions]
+	messageHandlers map[string][]MessageHandler
 
 	// cancel is the context cancel function of the join process.
 	cancel atomic.Value
@@ -133,19 +141,18 @@ func NewWorker(transport Transport) (*Worker, error) {
 		StatsReportInterval:    defaultStatsReportInterval,
 		StatsAggregateInterval: defaultStatsAggregateInterval,
 
-		runner:      NewLoadRunner(),
-		index:       -1,
-		state:       WorkerStateInit,
-		transport:   transport,
-		stats:       stats.New(),
-		spawnCh:     make(chan map[string]int64),
-		ackCh:       make(chan struct{}, 1),
-		heartbeatCh: make(chan struct{}),
-		procInfo:    procInfo,
-	}
+		loadGenerator: NewLoadGenerator(),
+		index:         -1,
+		state:         WorkerStateInit,
+		transport:     transport,
+		stats:         stats.New(),
+		spawnCh:       make(chan map[string]int64),
+		ackCh:         make(chan struct{}, 1),
+		heartbeatCh:   make(chan struct{}),
+		procInfo:      procInfo,
 
-	w.runner.SendMessageFunc = w.SendMessage
-	w.runner.ReportExceptionFunc = w.reportException
+		messageHandlers: map[string][]MessageHandler{},
+	}
 
 	return w, nil
 }
@@ -154,7 +161,7 @@ func NewWorker(transport Transport) (*Worker, error) {
 func (w *Worker) Join() error {
 	var wg sync.WaitGroup
 
-	w.runner.StatsNotifyInterval = w.StatsAggregateInterval
+	w.loadGenerator.StatsNotifyInterval = w.StatsAggregateInterval
 
 	// マスターへのコネクション確立前に Quit された場合は、トランスポートのコンテキストをキャンセルし、トランスポートを閉じることで終了させる
 	ctx, cancel := context.WithCancel(context.Background())
@@ -207,7 +214,7 @@ func (w *Worker) Stop() {
 		return
 	}
 	atomic.StoreInt64(&w.state, WorkerStateCleanup)
-	w.runner.Stop()
+	w.loadGenerator.Stop()
 	atomic.StoreInt64(&w.state, WorkerStateStopped)
 }
 
@@ -223,22 +230,17 @@ func (w *Worker) Quit() {
 
 // RegisterUser registers user.
 func (w *Worker) RegisterUser(name string, f func() User) {
-	w.runner.RegisterUser(name, f)
-}
-
-// RegisterMessage registers custom message handler.
-func (w *Worker) RegisterMessage(typ string, handler MessageHandler) {
-	w.runner.RegisterMessage(typ, handler)
+	w.loadGenerator.RegisterUser(w, name, f)
 }
 
 // OnTestStart registers function to be called when the test starts.
 func (w *Worker) OnTestStart(f func(ctx context.Context) error) {
-	w.runner.OnTestStart(f)
+	w.loadGenerator.OnTestStart(f)
 }
 
 // OnTestStop registers function to be called when the test stops.
 func (w *Worker) OnTestStop(f func(ctx context.Context)) {
-	w.runner.OnTestStop(f)
+	w.loadGenerator.OnTestStop(f)
 }
 
 // Index returns the index of the worker.
@@ -249,6 +251,41 @@ func (w *Worker) Index() int64 {
 // State returns the state of the worker.
 func (w *Worker) State() WorkerState {
 	return atomic.LoadInt64(&w.state)
+}
+
+func (w *Worker) Host() string {
+	if h := w.host.Load(); h != nil {
+		if host, ok := h.(string); ok {
+			return host
+		}
+	}
+	return ""
+}
+
+func (w *Worker) Tags() (tags, excludeTags *[]string) {
+	if p := w.parsedOptions.Load(); p != nil {
+		return p.Tags, p.ExcludeTags
+	}
+	return nil, nil
+}
+
+func (w *Worker) ReportException(err error) {
+	trace := ""
+	var e wrapError
+	if errors.As(err, &e) {
+		trace = e.StackTrace()
+	} else {
+		trace = ""
+	}
+	_ = w.SendMessage(messageException, exceptionPayload{
+		Msg:       err.Error(),
+		Traceback: trace,
+	})
+}
+
+// RegisterMessage registers custom message handler.
+func (w *Worker) RegisterMessage(typ string, handler MessageHandler) {
+	w.messageHandlers[typ] = append(w.messageHandlers[typ], handler)
 }
 
 // SendMessage sends message to the master.
@@ -359,16 +396,15 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 				}
 				lastReceivedSpawnTimestamp = payload.Timestamp
 
-				w.runner.SetHost(payload.Host)
-				w.runner.SetTags(payload.ParsedOptions.Tags)
-				w.runner.SetExcludeTags(payload.ParsedOptions.ExcludeTags)
+				w.host.Store(payload.Host)
+				w.parsedOptions.Store(&payload.ParsedOptions)
 
 				w.spawnCh <- payload.UserClassesCount
 
 			case messageStop:
-				w.runner.Stop()
-				w.runner.SetTags(nil)
-				w.runner.SetExcludeTags(nil)
+				w.loadGenerator.Stop()
+				w.host.Store("")
+				w.parsedOptions.Store(nil)
 				_ = w.SendMessage(messageClientStopped, nil)
 				atomic.StoreInt64(&w.state, WorkerStateInit)
 				_ = w.SendMessage(messageClientReady, w.Version)
@@ -389,7 +425,11 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 				w.Quit()
 
 			default:
-				w.runner.HandleMessage(msg)
+				if handlers, ok := w.messageHandlers[msg.Type]; ok {
+					for _, handler := range handlers {
+						handler(msg)
+					}
+				}
 			}
 		}
 	}()
@@ -434,7 +474,7 @@ func (w *Worker) startSpawnProcess(ctx context.Context, wg *sync.WaitGroup) {
 				// Runner がスタートしていない状態で spawn がリクエストされた場合は Runner をスタートする
 				if state := atomic.LoadInt64(&w.state); state != WorkerStateRunning && state != WorkerStateSpawning {
 					// Runner の Start 中に停止された場合は spawn を中断する
-					if err := w.runner.Start(); err != nil {
+					if err := w.loadGenerator.Start(); err != nil {
 						continue
 					}
 				}
@@ -442,7 +482,7 @@ func (w *Worker) startSpawnProcess(ctx context.Context, wg *sync.WaitGroup) {
 				atomic.StoreInt64(&w.state, WorkerStateSpawning)
 				_ = w.SendMessage(messageSpawning, nil)
 
-				users := w.runner.Users()
+				users := w.loadGenerator.Users()
 				var total int64
 				for _, u := range users {
 					total += u
@@ -453,7 +493,7 @@ func (w *Worker) startSpawnProcess(ctx context.Context, wg *sync.WaitGroup) {
 					UserCount:        0,
 				}
 				for name, count := range spawnCount {
-					if err := w.runner.Spawn(name, int(count)); err == nil {
+					if err := w.loadGenerator.Spawn(name, int(count)); err == nil {
 						payload.UserCount += count
 						payload.UserClassesCount[name] = count
 					}
@@ -534,7 +574,7 @@ func (w *Worker) startStatsProcess(ctx context.Context, wg *sync.WaitGroup, inte
 		return
 	}
 
-	ch := w.runner.Stats()
+	ch := w.loadGenerator.Stats()
 
 	wg.Add(1)
 	go func() {
@@ -561,7 +601,7 @@ func (w *Worker) startStatsProcess(ctx context.Context, wg *sync.WaitGroup, inte
 
 func (w *Worker) sendStats() error {
 	payload := convertStatisticsPayload(w.stats.Flush())
-	payload.UserClassesCount = w.runner.Users()
+	payload.UserClassesCount = w.loadGenerator.Users()
 	for _, count := range payload.UserClassesCount {
 		payload.UserCount += count
 	}
@@ -593,20 +633,6 @@ func (w *Worker) startMetricsMonitorProcess(ctx context.Context, wg *sync.WaitGr
 			}
 		}
 	}()
-}
-
-func (w *Worker) reportException(err error) {
-	trace := ""
-	var e wrapError
-	if errors.As(err, &e) {
-		trace = e.StackTrace()
-	} else {
-		trace = ""
-	}
-	_ = w.SendMessage(messageException, exceptionPayload{
-		Msg:       err.Error(),
-		Traceback: trace,
-	})
 }
 
 func convertStatisticsPayload(entries stats.Entries, total *stats.Entry, errors stats.Errors) *statsPayload {

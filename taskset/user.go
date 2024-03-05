@@ -47,8 +47,7 @@ func (tu *User) Init(u launce.User, r launce.Runner, rep launce.Reporter) {
 }
 
 func (tu *User) OnStart(ctx context.Context) error {
-	tags := tu.Runner().Tags()
-	exTags := tu.Runner().ExcludeTags()
+	tags, exTags := tu.Runner().Tags()
 
 	var opts []filterOption
 	if tags != nil {

@@ -30,8 +30,8 @@ var (
 	_ launce.BaseUserRequirement = (*user)(nil)
 )
 
-func TestLoadRunner_OnTestStart(t *testing.T) {
-	r := launce.NewLoadRunner()
+func TestLoadGenerator_OnTestStart(t *testing.T) {
+	r := launce.NewLoadGenerator()
 
 	result := false
 
@@ -49,8 +49,8 @@ func TestLoadRunner_OnTestStart(t *testing.T) {
 	}
 }
 
-func TestLoadRunner_OnTestStart_Error(t *testing.T) {
-	r := launce.NewLoadRunner()
+func TestLoadGenerator_OnTestStart_Error(t *testing.T) {
+	r := launce.NewLoadGenerator()
 
 	expected := errors.New("error")
 
@@ -63,8 +63,8 @@ func TestLoadRunner_OnTestStart_Error(t *testing.T) {
 	}
 }
 
-func TestLoadRunner_OnTestStop(t *testing.T) {
-	r := launce.NewLoadRunner()
+func TestLoadGenerator_OnTestStop(t *testing.T) {
+	r := launce.NewLoadGenerator()
 
 	result := false
 
@@ -83,12 +83,12 @@ func TestLoadRunner_OnTestStop(t *testing.T) {
 	}
 }
 
-func TestLoadRunner_Spawn(t *testing.T) {
-	r := launce.NewLoadRunner()
+func TestLoadGenerator_Spawn(t *testing.T) {
+	r := launce.NewLoadGenerator()
 
 	uc := newUserController()
 
-	r.RegisterUser("TestUser", uc.NewUser)
+	r.RegisterUser(nil, "TestUser", uc.NewUser)
 
 	if err := r.Start(); err != nil {
 		t.Fatal(err)
@@ -146,14 +146,14 @@ func TestLoadRunner_Spawn(t *testing.T) {
 	}
 }
 
-func TestLoadRunner_Spawn_MultiUser(t *testing.T) {
-	r := launce.NewLoadRunner()
+func TestLoadGenerator_Spawn_MultiUser(t *testing.T) {
+	r := launce.NewLoadGenerator()
 
 	uc1 := newUserController()
 	uc2 := newUserController()
 
-	r.RegisterUser("TestUser1", uc1.NewUser)
-	r.RegisterUser("TestUser2", uc2.NewUser)
+	r.RegisterUser(nil, "TestUser1", uc1.NewUser)
+	r.RegisterUser(nil, "TestUser2", uc2.NewUser)
 
 	if err := r.Start(); err != nil {
 		t.Fatal(err)
@@ -233,75 +233,6 @@ func TestLoadRunner_Spawn_MultiUser(t *testing.T) {
 	}
 	if n := uc2.Stopped(); n != 5 {
 		t.Fatalf("unexpected stopped user. got:%v want:%v", n, 5)
-	}
-}
-
-func TestLoadRunner_Host(t *testing.T) {
-	host := "https://example.com/"
-	r := launce.NewLoadRunner()
-	r.SetHost(host)
-
-	if h := r.Host(); h != host {
-		t.Fatalf("host got:%v want:%v", h, host)
-	}
-
-	ch := make(chan string)
-
-	r.RegisterUser("TestUser", func() launce.User {
-		u := &user{}
-		u.ProcessFunc = func(ctx context.Context) error {
-			ch <- u.Runner().Host()
-			close(ch)
-			return launce.StopUser
-		}
-		return u
-	})
-
-	if err := r.Start(); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := r.Spawn("TestUser", 1); err != nil {
-		t.Fatal(err)
-	}
-
-	if h := <-ch; h != host {
-		t.Fatalf("host got:%v want:%v", h, host)
-	}
-}
-
-func TestLoadRunner_Message(t *testing.T) {
-	r := launce.NewLoadRunner()
-
-	type Payload struct {
-		Message string
-	}
-
-	ch := make(chan Payload, 1)
-
-	r.RegisterMessage("custom-message", func(msg launce.ReceivedMessage) {
-		var payload Payload
-		_ = msg.DecodePayload(&payload)
-		ch <- payload
-		close(ch)
-	})
-
-	r.SendMessageFunc = func(typ string, data any) error {
-		msg := launce.Message{
-			Type:   typ,
-			Data:   data,
-			NodeID: "",
-		}
-		b, _ := launce.EncodeMessage(msg)
-		decMsg, _ := launce.DecodeMessage(b)
-		r.HandleMessage(decMsg)
-		return nil
-	}
-
-	_ = r.SendMessage("custom-message", Payload{Message: "foo"})
-
-	if payload := <-ch; payload.Message != "foo" {
-		t.Fatalf("received message got:%v want:%v", payload.Message, "foo")
 	}
 }
 

@@ -76,7 +76,7 @@ func (b *BaseUser) Init(u User, r Runner, rep Reporter) {
 	}
 }
 
-// Runner returns the runner.
+// Runner returns the generator.
 func (b *BaseUser) Runner() Runner {
 	return b.runner
 }
