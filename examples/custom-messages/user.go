@@ -21,25 +21,20 @@ import (
 	"time"
 
 	"github.com/qitoi/launce"
-	"github.com/qitoi/launce/taskset"
 )
 
 var (
-	_ taskset.User = (*User)(nil)
+	_ launce.BaseUser = (*User)(nil)
 )
 
 type User struct {
-	taskset.UserImpl
+	launce.BaseUserImpl
 }
 
 func (u *User) WaitTime() launce.WaitTimeFunc {
 	return launce.Constant(1 * time.Second)
 }
 
-func (u *User) TaskSet() taskset.TaskSet {
-	return taskset.NewSequential(
-		taskset.TaskFunc(func(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
-			return nil
-		}),
-	)
+func (u *User) Process(ctx context.Context) error {
+	return u.Wait(ctx)
 }
