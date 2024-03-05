@@ -23,30 +23,30 @@ import (
 	"github.com/qitoi/launce"
 )
 
-// UserRequirement is an interface that structs must implement to use User.
-type UserRequirement interface {
-	launce.BaseUserRequirement
+// User is an interface that structs must implement to use UserImpl.
+type User interface {
+	launce.BaseUser
 
 	// TaskSet returns the taskset to be processed.
 	TaskSet() TaskSet
 }
 
-// User processes taskset.
-type User struct {
-	launce.BaseUser
+// UserImpl processes taskset.
+type UserImpl struct {
+	launce.BaseUserImpl
 	taskset TaskSet
 }
 
-func (tu *User) Init(u launce.User, r launce.Runner, rep launce.Reporter) {
-	if tur, ok := u.(UserRequirement); !ok {
-		panic("not implemented taskset.UserRequirement")
+func (tu *UserImpl) Init(u launce.User, r launce.Runner, rep launce.Reporter) {
+	if tur, ok := u.(User); !ok {
+		panic("not implemented taskset.User")
 	} else {
-		tu.BaseUser.Init(u, r, rep)
+		tu.BaseUserImpl.Init(u, r, rep)
 		tu.taskset = tur.TaskSet()
 	}
 }
 
-func (tu *User) OnStart(ctx context.Context) error {
+func (tu *UserImpl) OnStart(ctx context.Context) error {
 	tags, exTags := tu.Runner().Tags()
 
 	var opts []filterOption
@@ -64,7 +64,7 @@ func (tu *User) OnStart(ctx context.Context) error {
 	return nil
 }
 
-func (tu *User) Process(ctx context.Context) error {
+func (tu *UserImpl) Process(ctx context.Context) error {
 	err := Run(ctx, tu.taskset, tu)
 	if err == nil || errors.Is(err, RescheduleTask) || errors.Is(err, RescheduleTaskImmediately) {
 		return nil

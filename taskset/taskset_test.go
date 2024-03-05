@@ -27,11 +27,11 @@ import (
 )
 
 var (
-	_ launce.BaseUserRequirement = (*testUser)(nil)
+	_ launce.BaseUser = (*testUser)(nil)
 )
 
 type testUser struct {
-	launce.BaseUser
+	launce.BaseUserImpl
 	Result []int
 }
 

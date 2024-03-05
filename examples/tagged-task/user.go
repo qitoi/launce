@@ -40,11 +40,11 @@ import (
 */
 
 var (
-	_ taskset.UserRequirement = (*User)(nil)
+	_ taskset.User = (*User)(nil)
 )
 
 type User struct {
-	taskset.User
+	taskset.UserImpl
 }
 
 func (u *User) WaitTime() launce.WaitTimeFunc {

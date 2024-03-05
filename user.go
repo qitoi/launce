@@ -52,23 +52,23 @@ type User interface {
 	Wait(ctx context.Context) error
 }
 
-// BaseUserRequirement is the interface that structs must implement to use BaseUser.
-type BaseUserRequirement interface {
+// BaseUser is the interface that structs must implement to use BaseUserImpl.
+type BaseUser interface {
 	User
 	WaitTime() WaitTimeFunc
 }
 
-// BaseUser is a base implementation of User.
-type BaseUser struct {
+// BaseUserImpl is a base implementation of User.
+type BaseUserImpl struct {
 	waiter   internal.Waiter
 	runner   Runner
 	reporter Reporter
 }
 
 // Init initializes the user.
-func (b *BaseUser) Init(u User, r Runner, rep Reporter) {
-	if bu, ok := u.(BaseUserRequirement); !ok {
-		panic("not implemented launce.BaseUserRequirement")
+func (b *BaseUserImpl) Init(u User, r Runner, rep Reporter) {
+	if bu, ok := u.(BaseUser); !ok {
+		panic("not implemented launce.BaseUser")
 	} else {
 		b.runner = r
 		b.reporter = rep
@@ -77,32 +77,32 @@ func (b *BaseUser) Init(u User, r Runner, rep Reporter) {
 }
 
 // Runner returns the generator.
-func (b *BaseUser) Runner() Runner {
+func (b *BaseUserImpl) Runner() Runner {
 	return b.runner
 }
 
 // Wait waits for the time returned by WaitTime.
-func (b *BaseUser) Wait(ctx context.Context) error {
+func (b *BaseUserImpl) Wait(ctx context.Context) error {
 	return b.waiter.Wait(ctx)
 }
 
 // OnStart is called when the user starts.
-func (b *BaseUser) OnStart(ctx context.Context) error {
+func (b *BaseUserImpl) OnStart(ctx context.Context) error {
 	return nil
 }
 
 // OnStop is called when the user stops.
-func (b *BaseUser) OnStop(ctx context.Context) error {
+func (b *BaseUserImpl) OnStop(ctx context.Context) error {
 	return nil
 }
 
 // Report reports the result of a request.
-func (b *BaseUser) Report(requestType, name string, responseTime time.Duration, contentLength int64) {
+func (b *BaseUserImpl) Report(requestType, name string, responseTime time.Duration, contentLength int64) {
 	b.reporter.Report(requestType, name, responseTime, contentLength)
 }
 
 // ReportError reports the result of a request with an error.
-func (b *BaseUser) ReportError(requestType, name string, responseTime time.Duration, contentLength int64, err error) {
+func (b *BaseUserImpl) ReportError(requestType, name string, responseTime time.Duration, contentLength int64, err error) {
 	b.reporter.ReportError(requestType, name, responseTime, contentLength, err)
 }
 

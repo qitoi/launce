@@ -27,7 +27,7 @@ import (
 )
 
 var (
-	_ launce.BaseUserRequirement = (*user)(nil)
+	_ launce.BaseUser = (*user)(nil)
 )
 
 func TestLoadGenerator_OnTestStart(t *testing.T) {
@@ -237,7 +237,7 @@ func TestLoadGenerator_Spawn_MultiUser(t *testing.T) {
 }
 
 type user struct {
-	launce.BaseUser
+	launce.BaseUserImpl
 	ProcessFunc func(ctx context.Context) error
 	OnStartFunc func(ctx context.Context) error
 	OnStopFunc  func(ctx context.Context) error

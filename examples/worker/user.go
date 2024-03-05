@@ -27,11 +27,11 @@ import (
 )
 
 var (
-	_ launce.BaseUserRequirement = (*User)(nil)
+	_ launce.BaseUser = (*User)(nil)
 )
 
 type User struct {
-	launce.BaseUser
+	launce.BaseUserImpl
 }
 
 func (u *User) WaitTime() launce.WaitTimeFunc {
