@@ -77,7 +77,7 @@ func extractEntriesField[T any](s *stats.Stats, f func(e *stats.Entry) T) map[st
 	return fields
 }
 
-func TestStatistics_Entries_StartTime(t *testing.T) {
+func TestStats_Entries_StartTime(t *testing.T) {
 	s := getStats()
 	extractor := func(e *stats.Entry) int64 {
 		return e.StartTime
@@ -103,7 +103,7 @@ func TestStatistics_Entries_StartTime(t *testing.T) {
 	}
 }
 
-func TestStatistics_Entries_NumRequests(t *testing.T) {
+func TestStats_Entries_NumRequests(t *testing.T) {
 	s := getStats()
 	extractor := func(e *stats.Entry) int64 {
 		return e.NumRequests
@@ -129,7 +129,7 @@ func TestStatistics_Entries_NumRequests(t *testing.T) {
 	}
 }
 
-func TestStatistics_Entries_NumNoneRequests(t *testing.T) {
+func TestStats_Entries_NumNoneRequests(t *testing.T) {
 	s := getStats()
 	extractor := func(e *stats.Entry) int64 {
 		return e.NumNoneRequests
@@ -155,7 +155,7 @@ func TestStatistics_Entries_NumNoneRequests(t *testing.T) {
 	}
 }
 
-func TestStatistics_Entries_NumRequestsPerSec(t *testing.T) {
+func TestStats_Entries_NumRequestsPerSec(t *testing.T) {
 	s := getStats()
 	extractor := func(e *stats.Entry) map[int64]int64 {
 		return e.NumRequestsPerSec
@@ -192,7 +192,7 @@ func TestStatistics_Entries_NumRequestsPerSec(t *testing.T) {
 	}
 }
 
-func TestStatistics_Entries_NumFailures(t *testing.T) {
+func TestStats_Entries_NumFailures(t *testing.T) {
 	s := getStats()
 	extractor := func(e *stats.Entry) int64 {
 		return e.NumFailures
@@ -218,7 +218,7 @@ func TestStatistics_Entries_NumFailures(t *testing.T) {
 	}
 }
 
-func TestStatistics_Entries_NumFailuresPerSec(t *testing.T) {
+func TestStats_Entries_NumFailuresPerSec(t *testing.T) {
 	s := getStats()
 	extractor := func(e *stats.Entry) map[int64]int64 {
 		return e.NumFailuresPerSec
@@ -249,7 +249,7 @@ func TestStatistics_Entries_NumFailuresPerSec(t *testing.T) {
 	}
 }
 
-func TestStatistics_Entries_LastRequestTimestamp(t *testing.T) {
+func TestStats_Entries_LastRequestTimestamp(t *testing.T) {
 	s := getStats()
 	extractor := func(e *stats.Entry) int64 {
 		return e.LastRequestTimestamp
@@ -275,7 +275,7 @@ func TestStatistics_Entries_LastRequestTimestamp(t *testing.T) {
 	}
 }
 
-func TestStatistics_Entries_TotalResponseTime(t *testing.T) {
+func TestStats_Entries_TotalResponseTime(t *testing.T) {
 	s := getStats()
 	extractor := func(e *stats.Entry) time.Duration {
 		return e.TotalResponseTime
@@ -301,7 +301,7 @@ func TestStatistics_Entries_TotalResponseTime(t *testing.T) {
 	}
 }
 
-func TestStatistics_Entries_MinResponseTime(t *testing.T) {
+func TestStats_Entries_MinResponseTime(t *testing.T) {
 	s := getStats()
 	extractor := func(e *stats.Entry) *time.Duration {
 		return e.MinResponseTime
@@ -327,7 +327,7 @@ func TestStatistics_Entries_MinResponseTime(t *testing.T) {
 	}
 }
 
-func TestStatistics_Entries_MaxResponseTime(t *testing.T) {
+func TestStats_Entries_MaxResponseTime(t *testing.T) {
 	s := getStats()
 	extractor := func(e *stats.Entry) time.Duration {
 		return e.MaxResponseTime
@@ -353,7 +353,7 @@ func TestStatistics_Entries_MaxResponseTime(t *testing.T) {
 	}
 }
 
-func TestStatistics_Entries_TotalContentLength(t *testing.T) {
+func TestStats_Entries_TotalContentLength(t *testing.T) {
 	s := getStats()
 	extractor := func(e *stats.Entry) int64 {
 		return e.TotalContentLength
@@ -379,7 +379,7 @@ func TestStatistics_Entries_TotalContentLength(t *testing.T) {
 	}
 }
 
-func TestStatistics_Entries_ResponseTimes(t *testing.T) {
+func TestStats_Entries_ResponseTimes(t *testing.T) {
 	s := getStats()
 	extractor := func(e *stats.Entry) map[int64]int64 {
 		return e.ResponseTimes
@@ -415,7 +415,7 @@ func TestStatistics_Entries_ResponseTimes(t *testing.T) {
 	}
 }
 
-func TestStatistics_Errors(t *testing.T) {
+func TestStats_Errors(t *testing.T) {
 	s := getStats()
 
 	expected := stats.Errors{
