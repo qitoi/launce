@@ -50,28 +50,28 @@ func (u *User) TaskSet() taskset.TaskSet {
 }
 
 func foo(_ context.Context, u launce.User, _ taskset.Scheduler) error {
-	u.Report(http.MethodGet, "/foo", launce.NoneResponseTime, 0)
+	u.Report(http.MethodGet, "/foo", launce.NoneResponseTime, 0, nil)
 	return nil
 }
 
 func (u *User) bar(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
-	u.Report(http.MethodGet, "/bar", launce.NoneResponseTime, 0)
+	u.Report(http.MethodGet, "/bar", launce.NoneResponseTime, 0, nil)
 	return nil
 }
 
 func (u *User) seq1(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
-	u.Report(http.MethodGet, "/seq/1", launce.NoneResponseTime, 0)
+	u.Report(http.MethodGet, "/seq/1", launce.NoneResponseTime, 0, nil)
 	return nil
 }
 
 func (u *User) seq2(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
-	u.Report(http.MethodGet, "/seq/2", launce.NoneResponseTime, 0)
+	u.Report(http.MethodGet, "/seq/2", launce.NoneResponseTime, 0, nil)
 	return nil
 }
 
 type seq3 struct{}
 
 func (s *seq3) Run(_ context.Context, u launce.User, _ taskset.Scheduler) error {
-	u.Report(http.MethodGet, "/seq/3", launce.NoneResponseTime, 0)
+	u.Report(http.MethodGet, "/seq/3", launce.NoneResponseTime, 0, nil)
 	return taskset.InterruptTaskSet
 }

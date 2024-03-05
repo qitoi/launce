@@ -45,19 +45,7 @@ func (r *Reporter) Stop() {
 }
 
 // Report reports statistics of request.
-func (r *Reporter) Report(requestType, name string, responseTime time.Duration, contentLength int64) {
-	r.ch <- reportRequest{
-		Now:           time.Now(),
-		RequestType:   requestType,
-		Name:          name,
-		ResponseTime:  responseTime,
-		ContentLength: contentLength,
-		Error:         nil,
-	}
-}
-
-// ReportError reports statistics of request with error.
-func (r *Reporter) ReportError(requestType, name string, responseTime time.Duration, contentLength int64, err error) {
+func (r *Reporter) Report(requestType, name string, responseTime time.Duration, contentLength int64, err error) {
 	r.ch <- reportRequest{
 		Now:           time.Now(),
 		RequestType:   requestType,

@@ -36,8 +36,7 @@ const (
 
 // Reporter is the interface that reports the result of a request.
 type Reporter interface {
-	Report(requestType, name string, responseTime time.Duration, contentLength int64)
-	ReportError(requestType, name string, responseTime time.Duration, contentLength int64, err error)
+	Report(requestType, name string, responseTime time.Duration, contentLength int64, err error)
 }
 
 // User is the interface that behaves as a locust user.
@@ -97,13 +96,8 @@ func (b *BaseUserImpl) OnStop(ctx context.Context) error {
 }
 
 // Report reports the result of a request.
-func (b *BaseUserImpl) Report(requestType, name string, responseTime time.Duration, contentLength int64) {
-	b.reporter.Report(requestType, name, responseTime, contentLength)
-}
-
-// ReportError reports the result of a request with an error.
-func (b *BaseUserImpl) ReportError(requestType, name string, responseTime time.Duration, contentLength int64, err error) {
-	b.reporter.ReportError(requestType, name, responseTime, contentLength, err)
+func (b *BaseUserImpl) Report(requestType, name string, responseTime time.Duration, contentLength int64, err error) {
+	b.reporter.Report(requestType, name, responseTime, contentLength, err)
 }
 
 func processUser(ctx context.Context, user User) error {
