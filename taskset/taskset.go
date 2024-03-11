@@ -43,8 +43,8 @@ type TaskSet interface {
 	Len() int
 	Next() Task
 	WaitTime() launce.WaitTimeFunc
-	OnStart(ctx context.Context, s Scheduler) error
-	OnStop(ctx context.Context) error
+	OnStart(ctx context.Context, u launce.User, s Scheduler) error
+	OnStop(ctx context.Context, u launce.User) error
 
 	FilterTasks(f func(tasks []Task) []Task)
 }
@@ -68,7 +68,7 @@ func (b *BaseImpl) Run(ctx context.Context, user launce.User, s Scheduler) error
 		waiter.Init(waitTimeFunc)
 	}
 
-	if err := b.taskset.OnStart(ctx, &tq); err != nil {
+	if err := b.taskset.OnStart(ctx, user, &tq); err != nil {
 		if errors.Is(err, InterruptTaskSet) {
 			return RescheduleTask
 		} else if errors.Is(err, InterruptTaskSetImmediately) {
@@ -98,24 +98,24 @@ func (b *BaseImpl) Run(ctx context.Context, user launce.User, s Scheduler) error
 
 		case errors.Is(err, launce.StopUser):
 			// user stopped by task
-			_ = b.taskset.OnStop(ctx)
+			_ = b.taskset.OnStop(ctx, user)
 			return err
 
 		case errors.Is(err, context.Canceled):
 			// test stopped
-			_ = b.taskset.OnStop(context.WithoutCancel(ctx))
+			_ = b.taskset.OnStop(context.WithoutCancel(ctx), user)
 			return err
 
 		case errors.Is(err, InterruptTaskSet):
 			// stop current taskset
-			if err := b.taskset.OnStop(ctx); errors.Is(err, launce.StopUser) || errors.Is(err, context.Canceled) {
+			if err := b.taskset.OnStop(ctx, user); errors.Is(err, launce.StopUser) || errors.Is(err, context.Canceled) {
 				return err
 			}
 			return RescheduleTask
 
 		case errors.Is(err, InterruptTaskSetImmediately):
 			// stop current taskset without parent taskset wait
-			if err := b.taskset.OnStop(ctx); errors.Is(err, launce.StopUser) || errors.Is(err, context.Canceled) {
+			if err := b.taskset.OnStop(ctx, user); errors.Is(err, launce.StopUser) || errors.Is(err, context.Canceled) {
 				return err
 			}
 			return RescheduleTaskImmediately
@@ -129,7 +129,7 @@ func (b *BaseImpl) Run(ctx context.Context, user launce.User, s Scheduler) error
 
 		if err := wait(ctx, user, waiter); err != nil {
 			if errors.Is(err, context.Canceled) {
-				_ = b.taskset.OnStop(context.WithoutCancel(ctx))
+				_ = b.taskset.OnStop(context.WithoutCancel(ctx), user)
 			}
 			return err
 		}
@@ -140,11 +140,11 @@ func (b *BaseImpl) WaitTime() launce.WaitTimeFunc {
 	return nil
 }
 
-func (b *BaseImpl) OnStart(ctx context.Context, s Scheduler) error {
+func (b *BaseImpl) OnStart(ctx context.Context, u launce.User, s Scheduler) error {
 	return nil
 }
 
-func (b *BaseImpl) OnStop(ctx context.Context) error {
+func (b *BaseImpl) OnStop(ctx context.Context, u launce.User) error {
 	return nil
 }
 

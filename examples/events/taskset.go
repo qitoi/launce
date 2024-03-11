@@ -24,6 +24,11 @@ import (
 	"github.com/qitoi/launce/taskset"
 )
 
+var (
+	_ taskset.TaskSet = (*TaskSet)(nil)
+	_ taskset.TaskSet = (*SubTaskSet)(nil)
+)
+
 type TaskSet struct {
 	*taskset.Random
 }
@@ -45,16 +50,16 @@ func NewTaskSet() *TaskSet {
 	return t
 }
 
-func (t *TaskSet) OnStart(ctx context.Context, s taskset.Scheduler) error {
-	if err := t.Random.OnStart(ctx, s); err != nil {
+func (t *TaskSet) OnStart(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+	if err := t.Random.OnStart(ctx, u, s); err != nil {
 		return err
 	}
 	fmt.Println("TaskSet OnStart")
 	return nil
 }
 
-func (t *TaskSet) OnStop(ctx context.Context) error {
-	if err := t.Random.OnStop(ctx); err != nil {
+func (t *TaskSet) OnStop(ctx context.Context, u launce.User) error {
+	if err := t.Random.OnStop(ctx, u); err != nil {
 		return err
 	}
 	fmt.Println("TaskSet OnStop")
@@ -90,16 +95,16 @@ func NewSubTaskSet() *SubTaskSet {
 	return t
 }
 
-func (t *SubTaskSet) OnStart(ctx context.Context, s taskset.Scheduler) error {
+func (t *SubTaskSet) OnStart(ctx context.Context, u launce.User, s taskset.Scheduler) error {
 	fmt.Println("SubTaskSet OnStart")
-	if err := t.Sequential.OnStart(ctx, s); err != nil {
+	if err := t.Sequential.OnStart(ctx, u, s); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (t *SubTaskSet) OnStop(ctx context.Context) error {
-	if err := t.Sequential.OnStop(ctx); err != nil {
+func (t *SubTaskSet) OnStop(ctx context.Context, u launce.User) error {
+	if err := t.Sequential.OnStop(ctx, u); err != nil {
 		return err
 	}
 	fmt.Println("SubTaskSet OnStop")

@@ -28,6 +28,7 @@ import (
 
 var (
 	_ launce.BaseUser = (*testUser)(nil)
+	_ taskset.TaskSet = (*testTaskSet)(nil)
 )
 
 type testUser struct {
@@ -49,25 +50,25 @@ func (t *testUser) Add(n int) {
 
 type testTaskSet struct {
 	*taskset.Sequential
-	onStart func(ctx context.Context, s taskset.Scheduler) error
-	onStop  func(ctx context.Context) error
+	onStart func(ctx context.Context, u launce.User, s taskset.Scheduler) error
+	onStop  func(ctx context.Context, u launce.User) error
 }
 
-func (t *testTaskSet) OnStart(ctx context.Context, s taskset.Scheduler) error {
+func (t *testTaskSet) OnStart(ctx context.Context, u launce.User, s taskset.Scheduler) error {
 	if t.onStart != nil {
-		return t.onStart(ctx, s)
+		return t.onStart(ctx, u, s)
 	}
 	return nil
 }
 
-func (t *testTaskSet) OnStop(ctx context.Context) error {
+func (t *testTaskSet) OnStop(ctx context.Context, u launce.User) error {
 	if t.onStop != nil {
-		return t.onStop(ctx)
+		return t.onStop(ctx, u)
 	}
 	return nil
 }
 
-func newTaskSet(onStart func(ctx context.Context, s taskset.Scheduler) error, onStop func(ctx context.Context) error, tasks ...taskset.Task) *testTaskSet {
+func newTaskSet(onStart func(ctx context.Context, u launce.User, s taskset.Scheduler) error, onStop func(ctx context.Context, u launce.User) error, tasks ...taskset.Task) *testTaskSet {
 	t := &testTaskSet{
 		Sequential: taskset.NewSequential(tasks...),
 		onStart:    onStart,
@@ -219,29 +220,29 @@ func TestTaskSet_Events(t *testing.T) {
 	var result []int
 
 	ts := newTaskSet(
-		func(ctx context.Context, s taskset.Scheduler) error {
+		func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
 			result = append(result, 0)
 			return nil
 		},
-		func(ctx context.Context) error {
+		func(ctx context.Context, u launce.User) error {
 			result = append(result, 9)
 			return nil
 		},
 		newTaskSet(
-			func(ctx context.Context, s taskset.Scheduler) error {
+			func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
 				result = append(result, 10)
 				return nil
 			},
-			func(ctx context.Context) error {
+			func(ctx context.Context, u launce.User) error {
 				result = append(result, 19)
 				return nil
 			},
 			newTaskSet(
-				func(ctx context.Context, s taskset.Scheduler) error {
+				func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
 					result = append(result, 100)
 					return nil
 				},
-				func(ctx context.Context) error {
+				func(ctx context.Context, u launce.User) error {
 					result = append(result, 109)
 					return nil
 				},
@@ -256,20 +257,20 @@ func TestTaskSet_Events(t *testing.T) {
 			}),
 		),
 		newTaskSet(
-			func(ctx context.Context, s taskset.Scheduler) error {
+			func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
 				result = append(result, 20)
 				return nil
 			},
-			func(ctx context.Context) error {
+			func(ctx context.Context, u launce.User) error {
 				result = append(result, 29)
 				return nil
 			},
 			newTaskSet(
-				func(ctx context.Context, s taskset.Scheduler) error {
+				func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
 					result = append(result, 200)
 					return nil
 				},
-				func(ctx context.Context) error {
+				func(ctx context.Context, u launce.User) error {
 					result = append(result, 209)
 					return nil
 				},
@@ -662,7 +663,7 @@ func TestTaskSet_Schedule(t *testing.T) {
 		{
 			Name: "Schedule #6",
 			TaskSet: newTaskSet(
-				func(ctx context.Context, s taskset.Scheduler) error {
+				func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
 					s.Schedule(taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
 						u.(*testUser).Add(21)
 						return nil
