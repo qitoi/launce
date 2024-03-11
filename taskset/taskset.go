@@ -91,39 +91,49 @@ func (b *BaseImpl) Run(ctx context.Context, user launce.User, s Scheduler) error
 		switch {
 		case err == nil || errors.Is(err, RescheduleTask):
 			// next task with wait
-			if err := wait(ctx, user, waiter); err != nil {
-				return err
-			}
 
 		case errors.Is(err, RescheduleTaskImmediately):
 			// next task without wait
+			continue
 
 		case errors.Is(err, launce.StopUser):
+			// user stopped by task
 			_ = b.taskset.OnStop(ctx)
 			return err
 
+		case errors.Is(err, context.Canceled):
+			// test stopped
+			_ = b.taskset.OnStop(context.WithoutCancel(ctx))
+			return err
+
 		case errors.Is(err, InterruptTaskSet):
-			if err := b.taskset.OnStop(ctx); errors.Is(err, launce.StopUser) {
+			// stop current taskset
+			if err := b.taskset.OnStop(ctx); errors.Is(err, launce.StopUser) || errors.Is(err, context.Canceled) {
 				return err
 			}
 			return RescheduleTask
 
 		case errors.Is(err, InterruptTaskSetImmediately):
-			if err := b.taskset.OnStop(ctx); errors.Is(err, launce.StopUser) {
+			// stop current taskset without parent taskset wait
+			if err := b.taskset.OnStop(ctx); errors.Is(err, launce.StopUser) || errors.Is(err, context.Canceled) {
 				return err
 			}
 			return RescheduleTaskImmediately
 
 		default:
+			// any other error is reported to master, and continue next task
 			if user != nil {
 				user.Runner().ReportException(err)
 			}
-			if err := wait(ctx, user, waiter); err != nil {
-				return err
+		}
+
+		if err := wait(ctx, user, waiter); err != nil {
+			if errors.Is(err, context.Canceled) {
+				_ = b.taskset.OnStop(context.WithoutCancel(ctx))
 			}
+			return err
 		}
 	}
-
 }
 
 func (b *BaseImpl) WaitTime() launce.WaitTimeFunc {
