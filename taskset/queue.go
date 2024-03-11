@@ -16,26 +16,34 @@
 
 package taskset
 
-import (
-	"context"
-
-	"github.com/qitoi/launce"
-)
-
-type FilterOption = filterOption
-
-func IncludeTags(tags ...string) FilterOption {
-	return includeTags(tags...)
+type taskQueue struct {
+	tasks   []Task
+	current Task
 }
 
-func ExcludeTags(tags ...string) FilterOption {
-	return excludeTags(tags...)
+func (tq *taskQueue) Empty() bool {
+	return len(tq.tasks) == 0
 }
 
-func FilterTasks(tasks []Task, opts ...FilterOption) []Task {
-	return filterTasks(tasks, opts...)
+func (tq *taskQueue) Next() Task {
+	t := tq.tasks[0]
+	if len(tq.tasks) == 1 {
+		tq.tasks = tq.tasks[:0]
+	} else {
+		tq.tasks = tq.tasks[1:]
+	}
+	tq.current = t
+	return t
 }
 
-func Run(ctx context.Context, task Task, user launce.User) error {
-	return run(ctx, task, user)
+func (tq *taskQueue) Current() Task {
+	return tq.current
+}
+
+func (tq *taskQueue) Schedule(t Task, first bool) {
+	if first {
+		tq.tasks = append([]Task{t}, tq.tasks...)
+	} else {
+		tq.tasks = append(tq.tasks, t)
+	}
 }

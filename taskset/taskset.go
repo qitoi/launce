@@ -49,42 +49,26 @@ type TaskSet interface {
 	FilterTasks(f func(tasks []Task) []Task)
 }
 
-type taskQueue struct {
-	tasks []Task
+type BaseImpl struct {
+	taskset TaskSet
 }
 
-func (tq *taskQueue) Empty() bool {
-	return len(tq.tasks) == 0
-}
-
-func (tq *taskQueue) Next() Task {
-	t := tq.tasks[0]
-	if len(tq.tasks) == 1 {
-		tq.tasks = tq.tasks[:0]
-	} else {
-		tq.tasks = tq.tasks[1:]
-	}
-	return t
-}
-
-func (tq *taskQueue) Schedule(t Task, first bool) {
-	if first {
-		tq.tasks = append([]Task{t}, tq.tasks...)
-	} else {
-		tq.tasks = append(tq.tasks, t)
+func (b *BaseImpl) Init(task Task) {
+	if ts := unwrapTask[TaskSet](task); ts != nil {
+		b.taskset = ts
 	}
 }
 
-func Run(ctx context.Context, t TaskSet, user launce.User) error {
+func (b *BaseImpl) Run(ctx context.Context, user launce.User, s Scheduler) error {
 	var tq taskQueue
 
 	var waiter *internal.Waiter
-	if waitTimeFunc := t.WaitTime(); waitTimeFunc != nil {
+	if waitTimeFunc := b.taskset.WaitTime(); waitTimeFunc != nil {
 		waiter = &internal.Waiter{}
 		waiter.Init(waitTimeFunc)
 	}
 
-	if err := t.OnStart(ctx, &tq); err != nil {
+	if err := b.taskset.OnStart(ctx, &tq); err != nil {
 		if errors.Is(err, InterruptTaskSet) {
 			return RescheduleTask
 		} else if errors.Is(err, InterruptTaskSetImmediately) {
@@ -95,10 +79,13 @@ func Run(ctx context.Context, t TaskSet, user launce.User) error {
 
 	for {
 		if tq.Empty() {
-			tq.Schedule(t.Next(), false)
+			tq.Schedule(b.taskset.Next(), false)
 		}
 
 		task := tq.Next()
+		if ti := unwrapTask[interface{ Init(task Task) }](task); ti != nil {
+			ti.Init(task)
+		}
 		err := task.Run(ctx, user, &tq)
 
 		switch {
@@ -112,17 +99,17 @@ func Run(ctx context.Context, t TaskSet, user launce.User) error {
 			// next task without wait
 
 		case errors.Is(err, launce.StopUser):
-			_ = t.OnStop(ctx)
+			_ = b.taskset.OnStop(ctx)
 			return err
 
 		case errors.Is(err, InterruptTaskSet):
-			if err := t.OnStop(ctx); errors.Is(err, launce.StopUser) {
+			if err := b.taskset.OnStop(ctx); errors.Is(err, launce.StopUser) {
 				return err
 			}
 			return RescheduleTask
 
 		case errors.Is(err, InterruptTaskSetImmediately):
-			if err := t.OnStop(ctx); errors.Is(err, launce.StopUser) {
+			if err := b.taskset.OnStop(ctx); errors.Is(err, launce.StopUser) {
 				return err
 			}
 			return RescheduleTaskImmediately
@@ -136,6 +123,19 @@ func Run(ctx context.Context, t TaskSet, user launce.User) error {
 			}
 		}
 	}
+
+}
+
+func (b *BaseImpl) WaitTime() launce.WaitTimeFunc {
+	return nil
+}
+
+func (b *BaseImpl) OnStart(ctx context.Context, s Scheduler) error {
+	return nil
+}
+
+func (b *BaseImpl) OnStop(ctx context.Context) error {
+	return nil
 }
 
 func wait(ctx context.Context, user launce.User, waiter *internal.Waiter) error {
@@ -144,5 +144,15 @@ func wait(ctx context.Context, user launce.User, waiter *internal.Waiter) error 
 		return waiter.Wait(ctx)
 	}
 	// 指定されていなければ User の Wait を使用
-	return user.Wait(ctx)
+	if user != nil {
+		return user.Wait(ctx)
+	}
+	return ctx.Err()
+}
+
+func run(ctx context.Context, task Task, user launce.User) error {
+	if ti, ok := task.(interface{ Init(task Task) }); ok {
+		ti.Init(task)
+	}
+	return task.Run(ctx, user, nil)
 }

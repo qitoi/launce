@@ -59,7 +59,7 @@ func TestRandom_Run(t *testing.T) {
 				)
 			}
 
-			random := taskset.NewRandom(tasks...)
+			var random taskset.TaskSet = taskset.NewRandom(tasks...)
 			err := taskset.Run(context.Background(), random, nil)
 
 			if !errors.Is(err, launce.StopUser) {

@@ -48,8 +48,9 @@ func (t *testUser) Add(n int) {
 }
 
 type testTaskSet struct {
-	taskset.Sequential
+	*taskset.Sequential
 	onStart func(ctx context.Context, s taskset.Scheduler) error
+	onStop  func(ctx context.Context) error
 }
 
 func (t *testTaskSet) OnStart(ctx context.Context, s taskset.Scheduler) error {
@@ -59,20 +60,28 @@ func (t *testTaskSet) OnStart(ctx context.Context, s taskset.Scheduler) error {
 	return nil
 }
 
-func newTaskSet(onStart func(ctx context.Context, s taskset.Scheduler) error, tasks ...taskset.Task) *testTaskSet {
-	t := &testTaskSet{
-		onStart: onStart,
+func (t *testTaskSet) OnStop(ctx context.Context) error {
+	if t.onStop != nil {
+		return t.onStop(ctx)
 	}
-	t.Init(tasks)
+	return nil
+}
+
+func newTaskSet(onStart func(ctx context.Context, s taskset.Scheduler) error, onStop func(ctx context.Context) error, tasks ...taskset.Task) *testTaskSet {
+	t := &testTaskSet{
+		Sequential: taskset.NewSequential(tasks...),
+		onStart:    onStart,
+		onStop:     onStop,
+	}
 	return t
 }
 
 func buildNestedTaskSet(tasks [][]taskset.Task) taskset.TaskSet {
 	var subTaskset []taskset.Task
 	for _, ts := range tasks {
-		subTaskset = append(subTaskset, newTaskSet(nil, ts...))
+		subTaskset = append(subTaskset, newTaskSet(nil, nil, ts...))
 	}
-	return newTaskSet(nil, subTaskset...)
+	return newTaskSet(nil, nil, subTaskset...)
 }
 
 func runTaskSet(task taskset.TaskSet) ([]int, error) {
@@ -206,6 +215,88 @@ func TestTaskSet_NestTaskSet(t *testing.T) {
 	}
 }
 
+func TestTaskSet_Events(t *testing.T) {
+	var result []int
+
+	ts := newTaskSet(
+		func(ctx context.Context, s taskset.Scheduler) error {
+			result = append(result, 0)
+			return nil
+		},
+		func(ctx context.Context) error {
+			result = append(result, 9)
+			return nil
+		},
+		newTaskSet(
+			func(ctx context.Context, s taskset.Scheduler) error {
+				result = append(result, 10)
+				return nil
+			},
+			func(ctx context.Context) error {
+				result = append(result, 19)
+				return nil
+			},
+			newTaskSet(
+				func(ctx context.Context, s taskset.Scheduler) error {
+					result = append(result, 100)
+					return nil
+				},
+				func(ctx context.Context) error {
+					result = append(result, 109)
+					return nil
+				},
+				taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					result = append(result, 105)
+					return taskset.InterruptTaskSet
+				}),
+			),
+			taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+				result = append(result, 15)
+				return taskset.InterruptTaskSet
+			}),
+		),
+		newTaskSet(
+			func(ctx context.Context, s taskset.Scheduler) error {
+				result = append(result, 20)
+				return nil
+			},
+			func(ctx context.Context) error {
+				result = append(result, 29)
+				return nil
+			},
+			newTaskSet(
+				func(ctx context.Context, s taskset.Scheduler) error {
+					result = append(result, 200)
+					return nil
+				},
+				func(ctx context.Context) error {
+					result = append(result, 209)
+					return nil
+				},
+				taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					result = append(result, 205)
+					return taskset.InterruptTaskSet
+				}),
+			),
+			taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+				result = append(result, 25)
+				return taskset.InterruptTaskSet
+			}),
+		),
+		taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+			result = append(result, 5)
+			return taskset.InterruptTaskSet
+		}),
+	)
+
+	_ = taskset.Run(context.Background(), ts, nil)
+
+	expected := []int{0, 10, 100, 105, 109, 15, 19, 20, 200, 205, 209, 25, 29, 5, 9}
+	if slices.Compare(result, expected) != 0 {
+		t.Fatalf("unexpected result. got:%v, want:%v", result, expected)
+	}
+}
+
 func TestFilterTasks(t *testing.T) {
 	tags := func(tags ...string) *[]string {
 		return &tags
@@ -312,6 +403,7 @@ func TestFilterTasks(t *testing.T) {
 		}), "tag2", "tag3"),
 		newTaskSet(
 			nil,
+			nil,
 			taskset.Tag(taskset.TaskFunc(func(_ context.Context, u launce.User, _ taskset.Scheduler) error {
 				u.(*testUser).Add(11)
 				return nil
@@ -324,6 +416,7 @@ func TestFilterTasks(t *testing.T) {
 		),
 		taskset.Tag(
 			newTaskSet(
+				nil,
 				nil,
 				taskset.TaskFunc(func(_ context.Context, u launce.User, _ taskset.Scheduler) error {
 					u.(*testUser).Add(21)
@@ -350,7 +443,7 @@ func TestFilterTasks(t *testing.T) {
 		}
 
 		t.Run(testcase.Name, func(t *testing.T) {
-			ts := newTaskSet(nil, taskset.FilterTasks(tasks, opts...)...)
+			ts := newTaskSet(nil, nil, taskset.FilterTasks(tasks, opts...)...)
 
 			result, err := runTaskSet(ts)
 
@@ -373,7 +466,7 @@ func TestFilterTasks(t *testing.T) {
 				return nil
 			}), "include"),
 			taskset.Tag(
-				newTaskSet(nil,
+				newTaskSet(nil, nil,
 					taskset.Tag(taskset.TaskFunc(func(_ context.Context, u launce.User, _ taskset.Scheduler) error {
 						u.(*testUser).Add(11)
 						return nil
@@ -385,7 +478,7 @@ func TestFilterTasks(t *testing.T) {
 		}
 
 		tasks = taskset.FilterTasks(tasks, taskset.IncludeTags("include"), taskset.ExcludeTags("exclude"))
-		ts := newTaskSet(nil, tasks...)
+		ts := newTaskSet(nil, nil, tasks...)
 
 		result, err := runTaskSet(ts)
 
@@ -411,7 +504,7 @@ func TestFilterTasks_ExcludeAllSubTasks(t *testing.T) {
 			u.(*testUser).Add(1)
 			return nil
 		}),
-		newTaskSet(nil,
+		newTaskSet(nil, nil,
 			taskset.Tag(
 				taskset.TaskFunc(func(_ context.Context, u launce.User, _ taskset.Scheduler) error {
 					u.(*testUser).Add(11)
@@ -424,7 +517,7 @@ func TestFilterTasks_ExcludeAllSubTasks(t *testing.T) {
 	}
 
 	tasks = taskset.FilterTasks(tasks, taskset.ExcludeTags("exclude"))
-	ts := newTaskSet(nil, tasks...)
+	var ts taskset.TaskSet = newTaskSet(nil, nil, tasks...)
 
 	result, err := runTaskSet(ts)
 
@@ -446,6 +539,7 @@ func TestTaskSet_Schedule(t *testing.T) {
 		{
 			Name: "Schedule #1",
 			TaskSet: newTaskSet(
+				nil,
 				nil,
 				taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
 					u.(*testUser).Add(11)
@@ -469,6 +563,7 @@ func TestTaskSet_Schedule(t *testing.T) {
 			Name: "Schedule #2",
 			TaskSet: newTaskSet(
 				nil,
+				nil,
 				taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
 					u.(*testUser).Add(11)
 					s.Schedule(taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
@@ -490,6 +585,7 @@ func TestTaskSet_Schedule(t *testing.T) {
 		{
 			Name: "Schedule #3",
 			TaskSet: newTaskSet(
+				nil,
 				nil,
 				taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
 					u.(*testUser).Add(11)
@@ -517,6 +613,7 @@ func TestTaskSet_Schedule(t *testing.T) {
 			Name: "Schedule #4",
 			TaskSet: newTaskSet(
 				nil,
+				nil,
 				taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
 					u.(*testUser).Add(11)
 					s.Schedule(taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
@@ -542,6 +639,7 @@ func TestTaskSet_Schedule(t *testing.T) {
 		{
 			Name: "Schedule #5",
 			TaskSet: newTaskSet(
+				nil,
 				nil,
 				taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
 					u.(*testUser).Add(11)
@@ -575,6 +673,7 @@ func TestTaskSet_Schedule(t *testing.T) {
 					}), false)
 					return nil
 				},
+				nil,
 				taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
 					u.(*testUser).Add(11)
 					return nil

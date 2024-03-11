@@ -17,10 +17,7 @@
 package taskset
 
 import (
-	"context"
 	"math/rand"
-
-	"github.com/qitoi/launce"
 )
 
 var (
@@ -29,6 +26,7 @@ var (
 
 // Random is a taskset that processes tasks randomly.
 type Random struct {
+	BaseImpl
 	tasks    []Task
 	filtered []Task
 }
@@ -36,11 +34,7 @@ type Random struct {
 // NewRandom returns a new Random TaskSet.
 func NewRandom(tasks ...Task) *Random {
 	r := &Random{}
-	r.Init(tasks)
-	return r
-}
 
-func (r *Random) Init(tasks []Task) {
 	totalWeight := 0
 	for _, t := range tasks {
 		totalWeight += max(GetWeight(t), 1)
@@ -57,6 +51,8 @@ func (r *Random) Init(tasks []Task) {
 	}
 
 	r.filtered = r.tasks
+
+	return r
 }
 
 func (r *Random) Len() int {
@@ -67,22 +63,6 @@ func (r *Random) Next() Task {
 	return r.filtered[rand.Intn(len(r.filtered))]
 }
 
-func (r *Random) WaitTime() launce.WaitTimeFunc {
-	return launce.Constant(0)
-}
-
-func (r *Random) OnStart(ctx context.Context, s Scheduler) error {
-	return nil
-}
-
-func (r *Random) OnStop(ctx context.Context) error {
-	return nil
-}
-
 func (r *Random) FilterTasks(f func(tasks []Task) []Task) {
 	r.filtered = f(r.tasks)
-}
-
-func (r *Random) Run(ctx context.Context, u launce.User, s Scheduler) error {
-	return Run(ctx, r, u)
 }

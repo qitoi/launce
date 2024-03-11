@@ -16,18 +16,13 @@
 
 package taskset
 
-import (
-	"context"
-
-	"github.com/qitoi/launce"
-)
-
 var (
 	_ TaskSet = (*Sequential)(nil)
 )
 
 // Sequential is a taskset that processes tasks in order.
 type Sequential struct {
+	BaseImpl
 	tasks    []Task
 	filtered []Task
 	index    int
@@ -36,13 +31,9 @@ type Sequential struct {
 // NewSequential returns a new Sequential TaskSet.
 func NewSequential(tasks ...Task) *Sequential {
 	s := &Sequential{}
-	s.Init(tasks)
-	return s
-}
-
-func (s *Sequential) Init(tasks []Task) {
 	s.tasks = tasks
 	s.filtered = tasks
+	return s
 }
 
 func (s *Sequential) Len() int {
@@ -55,22 +46,6 @@ func (s *Sequential) Next() Task {
 	return s.filtered[idx]
 }
 
-func (s *Sequential) WaitTime() launce.WaitTimeFunc {
-	return launce.Constant(0)
-}
-
-func (s *Sequential) OnStart(ctx context.Context, _ Scheduler) error {
-	return nil
-}
-
-func (s *Sequential) OnStop(ctx context.Context) error {
-	return nil
-}
-
 func (s *Sequential) FilterTasks(f func(tasks []Task) []Task) {
 	s.filtered = f(s.tasks)
-}
-
-func (s *Sequential) Run(ctx context.Context, u launce.User, _ Scheduler) error {
-	return Run(ctx, s, u)
 }

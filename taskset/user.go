@@ -65,7 +65,7 @@ func (tu *UserImpl) OnStart(ctx context.Context) error {
 }
 
 func (tu *UserImpl) Process(ctx context.Context) error {
-	err := Run(ctx, tu.taskset, tu)
+	err := run(ctx, tu.taskset, tu)
 	if err == nil || errors.Is(err, RescheduleTask) || errors.Is(err, RescheduleTaskImmediately) {
 		return nil
 	} else {

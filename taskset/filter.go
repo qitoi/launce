@@ -78,7 +78,7 @@ loop:
 			add = true
 		}
 
-		if ts := unwrapTaskSet(task); ts != nil {
+		if ts := unwrapTask[TaskSet](task); ts != nil {
 			if add {
 				ts.FilterTasks(func(tasks []Task) []Task {
 					return filterTasks(tasks, excludeTags(option.excludeTags...))
@@ -99,15 +99,16 @@ loop:
 	return filtered
 }
 
-func unwrapTaskSet(task Task) TaskSet {
+func unwrapTask[T any](task Task) T {
 	for task != nil {
-		if taskset, ok := task.(TaskSet); ok {
-			return taskset
+		if t, ok := task.(T); ok {
+			return t
 		} else if t, ok := task.(interface{ Unwrap() Task }); ok {
-			task = unwrapTaskSet(t.Unwrap())
+			task = t.Unwrap()
 		} else {
 			task = nil
 		}
 	}
-	return nil
+	var ret T
+	return ret
 }
