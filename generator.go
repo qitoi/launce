@@ -124,7 +124,7 @@ func (l *LoadGenerator) Stop() {
 
 	for _, s := range l.userSpawners {
 		s.Stop()
-		s.StopAllUsers()
+		s.StopAllThreads()
 	}
 	ctx := context.Background()
 	for _, f := range l.testStopHandlers {
@@ -145,7 +145,7 @@ func (l *LoadGenerator) Spawn(user string, count int) error {
 func (l *LoadGenerator) StopUsers() {
 	for _, s := range l.userSpawners {
 		s.Cap(0)
-		s.StopAllUsers()
+		s.StopAllThreads()
 	}
 }
 

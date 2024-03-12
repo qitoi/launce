@@ -19,12 +19,11 @@ package spawner
 
 import (
 	"context"
-	"slices"
 	"sync"
 	"sync/atomic"
 )
 
-// RestartMode is a mode for spawning users.
+// RestartMode is a mode for spawning threads.
 type RestartMode int
 
 // SpawnFunc is a target function for concurrent execution.
@@ -48,7 +47,7 @@ type Spawner struct {
 
 	stop func()
 
-	users userList
+	threads threadList
 
 	spawned int64
 }
@@ -74,7 +73,7 @@ func (s *Spawner) Cap(count int) {
 		s.Start()
 	} else {
 		// spawnWorker が動いていない場合はユーザーリストの上限のみ変更
-		s.users.Cap(count)
+		s.threads.Cap(count)
 	}
 }
 
@@ -96,9 +95,9 @@ func (s *Spawner) Stop() {
 	}
 }
 
-// StopAllUsers stops all running goroutines.
-func (s *Spawner) StopAllUsers() {
-	s.users.Clear()
+// StopAllThreads stops all running goroutines.
+func (s *Spawner) StopAllThreads() {
+	s.threads.Clear()
 }
 
 func (s *Spawner) isRunning() bool {
@@ -123,7 +122,7 @@ func (s *Spawner) spawnWorker(count int) {
 
 	// 旧 spawnCh から新 spawnCh にユーザーのロックを移し、溢れた場合はユーザーを捨てる
 	s.migrateSpawnCh(oldSpawnCh, spawnCh)
-	s.users.Cap(count)
+	s.threads.Cap(count)
 
 	if s.mode == RestartNever {
 		go s.spawnWorkerOnce(spawnCh, stopCh, stopWaitCh)
@@ -170,13 +169,13 @@ func (s *Spawner) spawnWorkerPersistent(spawnCh, stopCh, stopWaitCh chan struct{
 
 func (s *Spawner) spawn() {
 	ctx, cancel := context.WithCancel(context.Background())
-	id := s.users.Add(cancel)
+	id := s.threads.Add(cancel)
 
 	go func() {
 		atomic.AddInt64(&s.spawned, 1)
 		defer atomic.AddInt64(&s.spawned, -1)
 		s.spawnFunc(ctx)
-		s.users.Delete(id)
+		s.threads.Delete(id)
 
 		// ユーザーが終了したので spawn のロックを 1 つ解除
 		s.spawnChMutex.Lock()
@@ -193,7 +192,7 @@ func (s *Spawner) migrateSpawnCh(src, dst chan struct{}) {
 	if cap(dst) == 0 {
 		// cap が 0 に更新された場合は動いているユーザーを全て捨てる
 		for v := range src {
-			s.users.Pop(1)
+			s.threads.Pop(1)
 			dst <- v
 		}
 		return
@@ -217,78 +216,8 @@ loop:
 			// 移行先の channel に spawn のロックを移せられれば次のロックを取り出す
 		default:
 			// 移行先の channel が一杯の場合はユーザーを1つ捨ててからロックを移す
-			s.users.Pop(1)
+			s.threads.Pop(1)
 			dst <- v
 		}
-	}
-}
-
-type userWorker struct {
-	id     uint64
-	cancel func()
-}
-
-type userList struct {
-	mu        sync.Mutex
-	count     int
-	users     []userWorker
-	currentID uint64
-}
-
-func (ul *userList) Cap(n int) {
-	ul.mu.Lock()
-	defer ul.mu.Unlock()
-	ul.count = n
-	ul.pop(len(ul.users) - n)
-	old := ul.users
-	ul.users = make([]userWorker, len(old), n)
-	copy(ul.users, old)
-}
-
-func (ul *userList) Add(cancel func()) uint64 {
-	ul.mu.Lock()
-	defer ul.mu.Unlock()
-	ul.currentID += 1
-	ul.users = append(ul.users, userWorker{
-		id:     ul.currentID,
-		cancel: cancel,
-	})
-	ul.pop(len(ul.users) - ul.count)
-	return ul.currentID
-}
-
-func (ul *userList) Pop(n int) {
-	ul.mu.Lock()
-	defer ul.mu.Unlock()
-	ul.pop(n)
-}
-
-func (ul *userList) Delete(id uint64) {
-	ul.mu.Lock()
-	defer ul.mu.Unlock()
-	ul.users = slices.DeleteFunc(ul.users, func(u userWorker) bool {
-		if u.id == id {
-			u.cancel()
-			return true
-		}
-		return false
-	})
-}
-
-func (ul *userList) Clear() {
-	ul.mu.Lock()
-	defer ul.mu.Unlock()
-	ul.pop(len(ul.users))
-}
-
-func (ul *userList) pop(n int) {
-	n = min(n, len(ul.users))
-	if n <= 0 {
-		return
-	}
-	deleted := ul.users[:n]
-	ul.users = ul.users[n:]
-	for _, u := range deleted {
-		u.cancel()
 	}
 }

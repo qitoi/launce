@@ -92,7 +92,7 @@ func TestSpawner_Start(t *testing.T) {
 	s.Start()
 	defer func() {
 		s.Stop()
-		s.StopAllUsers()
+		s.StopAllThreads()
 	}()
 
 	time.Sleep(100 * time.Millisecond)
@@ -117,7 +117,7 @@ func TestSpawner_Cap_BeforeStart(t *testing.T) {
 	}
 
 	s.Stop()
-	s.StopAllUsers()
+	s.StopAllThreads()
 
 	st.WaitStop(3)
 	if n := st.Started(); n != 3 {
@@ -143,7 +143,7 @@ func TestSpawner_Cap_AfterStart(t *testing.T) {
 	}
 
 	s.Stop()
-	s.StopAllUsers()
+	s.StopAllThreads()
 
 	st.WaitStop(3)
 	if n := st.Started(); n != 3 {
@@ -179,7 +179,7 @@ func TestSpawner_Cap_Extension(t *testing.T) {
 	}
 
 	s.Stop()
-	s.StopAllUsers()
+	s.StopAllThreads()
 
 	st.WaitStop(5)
 	if n := st.Started(); n != 5 {
@@ -215,7 +215,7 @@ func TestSpawner_Cap_Shrink(t *testing.T) {
 	}
 
 	s.Stop()
-	s.StopAllUsers()
+	s.StopAllThreads()
 
 	st.WaitStop(3)
 	if n := st.Started(); n != 3 {
@@ -268,7 +268,7 @@ func TestSpawner_Cap_ShrinkMultiple(t *testing.T) {
 	}
 
 	s.Stop()
-	s.StopAllUsers()
+	s.StopAllThreads()
 
 	st.WaitStop(6)
 	if n := st.Started(); n != 6 {
@@ -293,7 +293,7 @@ func TestSpawner_SpawnPersistent(t *testing.T) {
 		t.Fatalf("unexpected stopped user. got:%d want:%d", n, 0)
 	}
 
-	s.StopAllUsers()
+	s.StopAllThreads()
 
 	st.WaitStart(2)
 	if n := st.Started(); n != 2 {
@@ -304,7 +304,7 @@ func TestSpawner_SpawnPersistent(t *testing.T) {
 	}
 
 	s.Stop()
-	s.StopAllUsers()
+	s.StopAllThreads()
 
 	st.WaitStop(2)
 	if n := st.Started(); n != 2 {
