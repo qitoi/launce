@@ -34,6 +34,7 @@ var (
 type testUser struct {
 	launce.BaseUserImpl
 	Result []int
+	Cancel context.CancelFunc
 }
 
 func (t *testUser) WaitTime() launce.WaitTimeFunc {
@@ -86,8 +87,11 @@ func buildNestedTaskSet(tasks [][]taskset.Task) taskset.TaskSet {
 }
 
 func runTaskSet(task taskset.TaskSet) ([]int, error) {
-	u := &testUser{}
-	err := taskset.Run(context.Background(), task, u)
+	ctx, cancel := context.WithCancel(context.Background())
+	u := &testUser{
+		Cancel: cancel,
+	}
+	err := taskset.Run(ctx, task, u)
 	return u.Result, err
 }
 
@@ -699,6 +703,261 @@ func TestTaskSet_Schedule(t *testing.T) {
 				t.Fatal(err)
 			}
 
+			if slices.Compare(result, testcase.Expected) != 0 {
+				t.Fatalf("unexpected result. got:%v, want:%v", result, testcase.Expected)
+			}
+		})
+	}
+}
+
+func TestTaskSet_Cancel(t *testing.T) {
+	testcases := []struct {
+		Name     string
+		TaskSet  taskset.TaskSet
+		Expected []int
+	}{
+		{
+			Name: "Cancel TaskSet Task #1",
+			TaskSet: newTaskSet(
+				func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					u.(*testUser).Add(0)
+					return nil
+				},
+				func(ctx context.Context, u launce.User) error {
+					u.(*testUser).Add(9)
+					return nil
+				},
+				taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					u.(*testUser).Add(1)
+					u.(*testUser).Cancel()
+					return ctx.Err()
+				}),
+				taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					u.(*testUser).Add(2)
+					return nil
+				}),
+			),
+			Expected: []int{0, 1, 9},
+		},
+		{
+			Name: "Cancel TaskSet Task #2",
+			TaskSet: newTaskSet(
+				func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					u.(*testUser).Add(0)
+					return nil
+				},
+				func(ctx context.Context, u launce.User) error {
+					u.(*testUser).Add(9)
+					return nil
+				},
+				taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					u.(*testUser).Add(1)
+					u.(*testUser).Cancel()
+					return nil
+				}),
+				taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					u.(*testUser).Add(2)
+					return nil
+				}),
+			),
+			Expected: []int{0, 1, 9},
+		},
+		{
+			Name: "Cancel TaskSet OnStart #1",
+			TaskSet: newTaskSet(
+				func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					u.(*testUser).Add(0)
+					u.(*testUser).Cancel()
+					return ctx.Err()
+				},
+				func(ctx context.Context, u launce.User) error {
+					u.(*testUser).Add(9)
+					return nil
+				},
+				taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					u.(*testUser).Add(1)
+					return nil
+				}),
+				taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					u.(*testUser).Add(2)
+					return nil
+				}),
+			),
+			Expected: []int{0},
+		},
+		{
+			Name: "Cancel TaskSet OnStart #2",
+			TaskSet: newTaskSet(
+				func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					u.(*testUser).Add(0)
+					u.(*testUser).Cancel()
+					return nil
+				},
+				func(ctx context.Context, u launce.User) error {
+					u.(*testUser).Add(9)
+					return nil
+				},
+				taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					u.(*testUser).Add(1)
+					return nil
+				}),
+				taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					u.(*testUser).Add(2)
+					return nil
+				}),
+			),
+			Expected: []int{0},
+		},
+		{
+			Name: "Cancel TaskSet OnStop #1",
+			TaskSet: newTaskSet(
+				func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					u.(*testUser).Add(0)
+					return nil
+				},
+				func(ctx context.Context, u launce.User) error {
+					u.(*testUser).Add(9)
+					u.(*testUser).Cancel()
+					return ctx.Err()
+				},
+				taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					u.(*testUser).Add(1)
+					return nil
+				}),
+				taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					u.(*testUser).Add(2)
+					return taskset.InterruptTaskSet
+				}),
+			),
+			Expected: []int{0, 1, 2, 9},
+		},
+		{
+			Name: "Cancel TaskSet OnStop #2",
+			TaskSet: newTaskSet(
+				func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					u.(*testUser).Add(0)
+					return nil
+				},
+				func(ctx context.Context, u launce.User) error {
+					u.(*testUser).Add(9)
+					u.(*testUser).Cancel()
+					return nil
+				},
+				taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					u.(*testUser).Add(1)
+					return nil
+				}),
+				taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					u.(*testUser).Add(2)
+					return taskset.InterruptTaskSet
+				}),
+			),
+			Expected: []int{0, 1, 2, 9},
+		},
+		{
+			Name: "Cancel SubTaskSet Task",
+			TaskSet: newTaskSet(
+				func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					u.(*testUser).Add(0)
+					return nil
+				},
+				func(ctx context.Context, u launce.User) error {
+					u.(*testUser).Add(9)
+					return nil
+				},
+				taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					u.(*testUser).Add(1)
+					return nil
+				}),
+				newTaskSet(
+					func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+						u.(*testUser).Add(10)
+						return nil
+					},
+					func(ctx context.Context, u launce.User) error {
+						u.(*testUser).Add(19)
+						return nil
+					},
+					taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+						u.(*testUser).Add(11)
+						u.(*testUser).Cancel()
+						return ctx.Err()
+					}),
+				),
+			),
+			Expected: []int{0, 1, 10, 11, 19, 9},
+		},
+		{
+			Name: "Cancel SubTaskSet OnStart",
+			TaskSet: newTaskSet(
+				func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					u.(*testUser).Add(0)
+					return nil
+				},
+				func(ctx context.Context, u launce.User) error {
+					u.(*testUser).Add(9)
+					return nil
+				},
+				taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					u.(*testUser).Add(1)
+					return nil
+				}),
+				newTaskSet(
+					func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+						u.(*testUser).Add(10)
+						u.(*testUser).Cancel()
+						return ctx.Err()
+					},
+					func(ctx context.Context, u launce.User) error {
+						u.(*testUser).Add(19)
+						return nil
+					},
+					taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+						u.(*testUser).Add(11)
+						return taskset.InterruptTaskSet
+					}),
+				),
+			),
+			Expected: []int{0, 1, 10, 9},
+		},
+		{
+			Name: "Cancel SubTaskSet OnStop",
+			TaskSet: newTaskSet(
+				func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					u.(*testUser).Add(0)
+					return nil
+				},
+				func(ctx context.Context, u launce.User) error {
+					u.(*testUser).Add(9)
+					return nil
+				},
+				taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+					u.(*testUser).Add(1)
+					return nil
+				}),
+				newTaskSet(
+					func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+						u.(*testUser).Add(10)
+						return nil
+					},
+					func(ctx context.Context, u launce.User) error {
+						u.(*testUser).Add(19)
+						u.(*testUser).Cancel()
+						return ctx.Err()
+					},
+					taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+						u.(*testUser).Add(11)
+						return taskset.InterruptTaskSet
+					}),
+				),
+			),
+			Expected: []int{0, 1, 10, 11, 19, 9},
+		},
+	}
+
+	for _, testcase := range testcases {
+		t.Run(testcase.Name, func(t *testing.T) {
+			result, _ := runTaskSet(testcase.TaskSet)
 			if slices.Compare(result, testcase.Expected) != 0 {
 				t.Fatalf("unexpected result. got:%v, want:%v", result, testcase.Expected)
 			}
