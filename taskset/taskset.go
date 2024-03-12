@@ -75,6 +75,8 @@ func (b *BaseImpl) Run(ctx context.Context, user launce.User, s Scheduler) error
 			return RescheduleTaskImmediately
 		}
 		return err
+	} else if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	for {
