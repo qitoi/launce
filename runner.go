@@ -17,7 +17,7 @@
 package launce
 
 // MessageHandler defines a function to handle custom messages from the master.
-type MessageHandler func(msg ReceivedMessage)
+type MessageHandler func(msg Message)
 
 // Runner is interface for load test runner.
 type Runner interface {

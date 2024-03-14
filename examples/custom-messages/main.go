@@ -47,7 +47,7 @@ func main() {
 		return &User{}
 	})
 
-	worker.RegisterMessage("ping", func(msg launce.ReceivedMessage) {
+	worker.RegisterMessage("ping", func(msg launce.Message) {
 		var payload PingPayload
 		if err := msg.DecodePayload(&payload); err != nil {
 			fmt.Printf("unexpected payload: %v\n", err)

@@ -20,11 +20,13 @@ import (
 	"context"
 )
 
-func EncodeMessage(msg Message) ([]byte, error) {
+type SendMessage = message
+
+func EncodeMessage(msg SendMessage) ([]byte, error) {
 	return encodeMessage(msg)
 }
 
-func DecodeMessage(data []byte) (ReceivedMessage, error) {
+func DecodeMessage(data []byte) (Message, error) {
 	return decodeMessage(data)
 }
 

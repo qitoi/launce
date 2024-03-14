@@ -290,7 +290,7 @@ func (w *Worker) RegisterMessage(typ string, handler MessageHandler) {
 
 // SendMessage sends message to the master.
 func (w *Worker) SendMessage(typ string, data any) error {
-	msg := Message{
+	msg := message{
 		Type:   typ,
 		Data:   data,
 		NodeID: w.ClientID,
@@ -348,10 +348,10 @@ loop:
 	return nil
 }
 
-func (w *Worker) recv() (ReceivedMessage, error) {
+func (w *Worker) recv() (Message, error) {
 	b, err := w.transport.Receive()
 	if err != nil {
-		return ReceivedMessage{}, err
+		return Message{}, err
 	}
 	return decodeMessage(b)
 }

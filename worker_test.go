@@ -75,8 +75,8 @@ func TestWorker_RegisterMessage(t *testing.T) {
 	w, master := setupWorker(t)
 	_, waitForReady := startMasterReceiver(&wg, master)
 
-	ch := make(chan launce.ReceivedMessage)
-	w.RegisterMessage("custom-message", func(msg launce.ReceivedMessage) {
+	ch := make(chan launce.Message)
+	w.RegisterMessage("custom-message", func(msg launce.Message) {
 		ch <- msg
 	})
 
@@ -88,7 +88,7 @@ func TestWorker_RegisterMessage(t *testing.T) {
 
 	waitForReady()
 
-	_ = master.Send(launce.Message{
+	_ = master.Send(launce.SendMessage{
 		Type:   "custom-message",
 		Data:   "hello",
 		NodeID: w.ClientID,
@@ -123,12 +123,12 @@ func TestWorker_RegisterMessage_MultipleReceivers(t *testing.T) {
 	_, waitForReady := startMasterReceiver(&wg, master)
 
 	ch := make(chan string)
-	w.RegisterMessage("custom-message", func(msg launce.ReceivedMessage) {
+	w.RegisterMessage("custom-message", func(msg launce.Message) {
 		var s string
 		_ = msg.DecodePayload(&s)
 		ch <- "1:" + s
 	})
-	w.RegisterMessage("custom-message", func(msg launce.ReceivedMessage) {
+	w.RegisterMessage("custom-message", func(msg launce.Message) {
 		var s string
 		_ = msg.DecodePayload(&s)
 		ch <- "2:" + s
@@ -142,7 +142,7 @@ func TestWorker_RegisterMessage_MultipleReceivers(t *testing.T) {
 
 	waitForReady()
 
-	_ = master.Send(launce.Message{
+	_ = master.Send(launce.SendMessage{
 		Type:   "custom-message",
 		Data:   "hello",
 		NodeID: w.ClientID,
@@ -169,12 +169,12 @@ func TestWorker_RegisterMessage_MultipleMessages(t *testing.T) {
 	_, waitForReady := startMasterReceiver(&wg, master)
 
 	ch := make(chan string, 1)
-	w.RegisterMessage("custom-message1", func(msg launce.ReceivedMessage) {
+	w.RegisterMessage("custom-message1", func(msg launce.Message) {
 		var s string
 		_ = msg.DecodePayload(&s)
 		ch <- "1:" + s
 	})
-	w.RegisterMessage("custom-message2", func(msg launce.ReceivedMessage) {
+	w.RegisterMessage("custom-message2", func(msg launce.Message) {
 		var s string
 		_ = msg.DecodePayload(&s)
 		ch <- "2:" + s
@@ -188,12 +188,12 @@ func TestWorker_RegisterMessage_MultipleMessages(t *testing.T) {
 
 	waitForReady()
 
-	_ = master.Send(launce.Message{
+	_ = master.Send(launce.SendMessage{
 		Type:   "custom-message1",
 		Data:   "foo",
 		NodeID: w.ClientID,
 	})
-	_ = master.Send(launce.Message{
+	_ = master.Send(launce.SendMessage{
 		Type:   "custom-message2",
 		Data:   "bar",
 		NodeID: w.ClientID,
@@ -314,7 +314,7 @@ func TestWorker_SpawnMessage(t *testing.T) {
 
 	uc.WaitStart(3)
 
-	_ = master.Send(launce.Message{
+	_ = master.Send(launce.SendMessage{
 		Type:   launce.MessageStop,
 		Data:   nil,
 		NodeID: w.ClientID,
@@ -355,7 +355,7 @@ func TestWorker_QuitMessage(t *testing.T) {
 		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageClientReady)
 	}
 
-	_ = master.Send(launce.Message{
+	_ = master.Send(launce.SendMessage{
 		Type:   launce.MessageQuit,
 		Data:   nil,
 		NodeID: w.ClientID,
@@ -392,8 +392,8 @@ func setupWorker(t *testing.T) (*launce.Worker, *masterTransport) {
 	return w, &masterTransport{transport: mt}
 }
 
-func startMasterReceiver(wg *sync.WaitGroup, master *masterTransport, filterMessages ...string) (<-chan launce.ReceivedMessage, func()) {
-	ch := make(chan launce.ReceivedMessage)
+func startMasterReceiver(wg *sync.WaitGroup, master *masterTransport, filterMessages ...string) (<-chan launce.Message, func()) {
+	ch := make(chan launce.Message)
 
 	readyCh := make(chan struct{})
 	var once sync.Once
@@ -409,7 +409,7 @@ func startMasterReceiver(wg *sync.WaitGroup, master *masterTransport, filterMess
 				return
 			}
 			if msg.Type == "client_ready" {
-				_ = master.Send(launce.Message{
+				_ = master.Send(launce.SendMessage{
 					Type:   launce.MessageAck,
 					Data:   launce.AckPayload{Index: 1},
 					NodeID: msg.NodeID,
@@ -434,7 +434,7 @@ type masterTransport struct {
 	lastSpawn float64
 }
 
-func (m *masterTransport) Send(msg launce.Message) error {
+func (m *masterTransport) Send(msg launce.SendMessage) error {
 	b, err := launce.EncodeMessage(msg)
 	if err != nil {
 		return err
@@ -442,21 +442,21 @@ func (m *masterTransport) Send(msg launce.Message) error {
 	return m.transport.Send(b)
 }
 
-func (m *masterTransport) Receive() (launce.ReceivedMessage, error) {
+func (m *masterTransport) Receive() (launce.Message, error) {
 	b, err := m.transport.Receive()
 	if err != nil {
-		return launce.ReceivedMessage{}, err
+		return launce.Message{}, err
 	}
 	msg, err := launce.DecodeMessage(b)
 	if err != nil {
-		return launce.ReceivedMessage{}, err
+		return launce.Message{}, err
 	}
 	return msg, nil
 }
 
 func (m *masterTransport) SendSpawn(users map[string]int64, nodeID string) error {
 	m.lastSpawn += 1
-	return m.Send(launce.Message{
+	return m.Send(launce.SendMessage{
 		Type: launce.MessageSpawn,
 		Data: launce.SpawnPayload{
 			Timestamp:        m.lastSpawn,

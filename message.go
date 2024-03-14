@@ -22,23 +22,23 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-type Message struct {
+type message struct {
 	Type   string
 	Data   any
 	NodeID string
 }
 
-type ReceivedMessage struct {
+type Message struct {
 	Type   string
 	Data   msgpack.RawMessage
 	NodeID string
 }
 
-func (r *ReceivedMessage) DecodePayload(v interface{}) error {
+func (r *Message) DecodePayload(v interface{}) error {
 	return msgpack.Unmarshal(r.Data, v)
 }
 
-func encodeMessage(msg Message) ([]byte, error) {
+func encodeMessage(msg message) ([]byte, error) {
 	b := bytes.NewBuffer(nil)
 	enc := msgpack.NewEncoder(b)
 	if err := enc.EncodeArrayLen(3); err != nil {
@@ -56,10 +56,10 @@ func encodeMessage(msg Message) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-func decodeMessage(data []byte) (ReceivedMessage, error) {
-	var msg ReceivedMessage
+func decodeMessage(data []byte) (Message, error) {
+	var msg Message
 	if err := msgpack.Unmarshal(data, &msg); err != nil {
-		return ReceivedMessage{}, err
+		return Message{}, err
 	}
 	return msg, nil
 }
