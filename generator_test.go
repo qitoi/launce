@@ -136,8 +136,6 @@ func TestLoadGenerator_Spawn(t *testing.T) {
 
 	r.Stop()
 
-	uc.WaitStop(3)
-
 	if n := uc.Started(); n != 3 {
 		t.Fatalf("unexpected started user. got:%v want:%v", n, 3)
 	}
@@ -218,9 +216,6 @@ func TestLoadGenerator_Spawn_MultiUser(t *testing.T) {
 	}
 
 	r.Stop()
-
-	uc1.WaitStop(2)
-	uc2.WaitStop(5)
 
 	if n := uc1.Started(); n != 2 {
 		t.Fatalf("unexpected started user. got:%v want:%v", n, 2)

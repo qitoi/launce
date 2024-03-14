@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -122,10 +123,17 @@ func (l *LoadGenerator) Stop() {
 		}
 	}
 
+	var wg sync.WaitGroup
+	wg.Add(len(l.userSpawners))
 	for _, s := range l.userSpawners {
-		s.Stop()
-		s.StopAllThreads()
+		go func(s *spawner.Spawner) {
+			defer wg.Done()
+			s.Stop()
+			s.StopAllThreads()
+		}(s)
 	}
+	wg.Wait()
+
 	ctx := context.Background()
 	for _, f := range l.testStopHandlers {
 		f(ctx)
@@ -143,10 +151,16 @@ func (l *LoadGenerator) Spawn(user string, count int) error {
 
 // StopUsers stops all users.
 func (l *LoadGenerator) StopUsers() {
+	var wg sync.WaitGroup
+	wg.Add(len(l.userSpawners))
 	for _, s := range l.userSpawners {
-		s.Cap(0)
-		s.StopAllThreads()
+		go func(s *spawner.Spawner) {
+			defer wg.Done()
+			s.Cap(0)
+			s.StopAllThreads()
+		}(s)
 	}
+	wg.Wait()
 }
 
 // Users returns the number of running users.
