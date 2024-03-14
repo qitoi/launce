@@ -41,23 +41,26 @@ type Spawner struct {
 	mode      RestartMode
 	spawnFunc SpawnFunc
 	count     int
+	spawned   int64
 
 	spawnChMutex sync.Mutex
 	spawnCh      chan struct{}
 
 	stop func()
 
-	threads threadList
-
-	spawned int64
+	threads     threadList
+	threadMutex sync.Mutex
+	threadWg    *sync.WaitGroup
 }
 
 // New returns a new Spawner.
 func New(f SpawnFunc, mode RestartMode) *Spawner {
-	return &Spawner{
+	s := &Spawner{
 		mode:      mode,
 		spawnFunc: f,
 	}
+	s.threadWg = &sync.WaitGroup{}
+	return s
 }
 
 // Cap sets the maximum number of concurrent goroutines.
@@ -97,7 +100,13 @@ func (s *Spawner) Stop() {
 
 // StopAllThreads stops all running goroutines.
 func (s *Spawner) StopAllThreads() {
+	s.threadMutex.Lock()
+	wg := s.threadWg
+	s.threadWg = &sync.WaitGroup{}
 	s.threads.Clear()
+	s.threadMutex.Unlock()
+
+	wg.Wait()
 }
 
 func (s *Spawner) isRunning() bool {
@@ -169,11 +178,19 @@ func (s *Spawner) spawnWorkerPersistent(spawnCh, stopCh, stopWaitCh chan struct{
 
 func (s *Spawner) spawn() {
 	ctx, cancel := context.WithCancel(context.Background())
+
+	s.threadMutex.Lock()
 	id := s.threads.Add(cancel)
+	wg := s.threadWg
+	wg.Add(1)
+	s.threadMutex.Unlock()
 
 	go func() {
+		defer wg.Done()
+
 		atomic.AddInt64(&s.spawned, 1)
 		defer atomic.AddInt64(&s.spawned, -1)
+
 		s.spawnFunc(ctx)
 		s.threads.Delete(id)
 

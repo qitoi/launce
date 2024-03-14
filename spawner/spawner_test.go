@@ -19,6 +19,7 @@ package spawner_test
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -30,6 +31,7 @@ type SpawnTask struct {
 	startCond *sync.Cond
 	stopped   int
 	stopCond  *sync.Cond
+	TaskFunc  func(ctx context.Context)
 }
 
 func NewSpawnTask() *SpawnTask {
@@ -45,7 +47,11 @@ func (s *SpawnTask) Run(ctx context.Context) {
 	s.startCond.Broadcast()
 	s.startCond.L.Unlock()
 
-	<-ctx.Done()
+	if s.TaskFunc != nil {
+		s.TaskFunc(ctx)
+	} else {
+		<-ctx.Done()
+	}
 
 	s.stopCond.L.Lock()
 	s.stopped += 1
@@ -119,7 +125,6 @@ func TestSpawner_Cap_BeforeStart(t *testing.T) {
 	s.Stop()
 	s.StopAllThreads()
 
-	st.WaitStop(3)
 	if n := st.Started(); n != 3 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 3)
 	}
@@ -145,7 +150,6 @@ func TestSpawner_Cap_AfterStart(t *testing.T) {
 	s.Stop()
 	s.StopAllThreads()
 
-	st.WaitStop(3)
 	if n := st.Started(); n != 3 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 3)
 	}
@@ -181,7 +185,6 @@ func TestSpawner_Cap_Extension(t *testing.T) {
 	s.Stop()
 	s.StopAllThreads()
 
-	st.WaitStop(5)
 	if n := st.Started(); n != 5 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 5)
 	}
@@ -206,7 +209,6 @@ func TestSpawner_Cap_Shrink(t *testing.T) {
 
 	s.Cap(1)
 
-	st.WaitStop(2)
 	if n := st.Started(); n != 3 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 3)
 	}
@@ -217,7 +219,6 @@ func TestSpawner_Cap_Shrink(t *testing.T) {
 	s.Stop()
 	s.StopAllThreads()
 
-	st.WaitStop(3)
 	if n := st.Started(); n != 3 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 3)
 	}
@@ -241,7 +242,6 @@ func TestSpawner_Cap_ShrinkMultiple(t *testing.T) {
 	}
 
 	s.Cap(5)
-	st.WaitStop(1)
 	if n := st.Started(); n != 6 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 6)
 	}
@@ -250,7 +250,6 @@ func TestSpawner_Cap_ShrinkMultiple(t *testing.T) {
 	}
 
 	s.Cap(4)
-	st.WaitStop(2)
 	if n := st.Started(); n != 6 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 6)
 	}
@@ -259,7 +258,6 @@ func TestSpawner_Cap_ShrinkMultiple(t *testing.T) {
 	}
 
 	s.Cap(2)
-	st.WaitStop(2)
 	if n := st.Started(); n != 6 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 6)
 	}
@@ -270,7 +268,6 @@ func TestSpawner_Cap_ShrinkMultiple(t *testing.T) {
 	s.Stop()
 	s.StopAllThreads()
 
-	st.WaitStop(6)
 	if n := st.Started(); n != 6 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 6)
 	}
@@ -295,6 +292,10 @@ func TestSpawner_SpawnPersistent(t *testing.T) {
 
 	s.StopAllThreads()
 
+	if n := st.Stopped(); n != 1 {
+		t.Fatalf("unexpected stopped user. got:%d want:%d", n, 1)
+	}
+
 	st.WaitStart(2)
 	if n := st.Started(); n != 2 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 2)
@@ -306,11 +307,71 @@ func TestSpawner_SpawnPersistent(t *testing.T) {
 	s.Stop()
 	s.StopAllThreads()
 
-	st.WaitStop(2)
 	if n := st.Started(); n != 2 {
 		t.Fatalf("unexpected started user. got:%d want:%d", n, 2)
 	}
 	if n := st.Stopped(); n != 2 {
 		t.Fatalf("unexpected stopped user. got:%d want:%d", n, 2)
 	}
+}
+
+func TestSpawner_StopAllThreads(t *testing.T) {
+	s, st := NewSpawner(spawner.RestartNever)
+
+	ctx2, cancel := context.WithCancel(context.Background())
+
+	var no atomic.Int64
+	st.TaskFunc = func(ctx context.Context) {
+		if no.Add(1) == 1 {
+			<-ctx.Done()
+		} else {
+			<-ctx2.Done()
+		}
+	}
+
+	s.Start()
+
+	s.Cap(2)
+
+	st.WaitStart(2)
+	if n := st.Started(); n != 2 {
+		t.Fatalf("unexpected started user. got:%d want:%d", n, 2)
+	}
+	if n := st.Stopped(); n != 0 {
+		t.Fatalf("unexpected stopped user. got:%d want:%d", n, 0)
+	}
+
+	var stopped atomic.Bool
+	ch := make(chan struct{})
+	go func() {
+		s.StopAllThreads()
+		stopped.Store(true)
+		close(ch)
+	}()
+
+	st.WaitStop(1)
+
+	time.Sleep(100 * time.Millisecond)
+
+	if n := st.Started(); n != 2 {
+		t.Fatalf("unexpected started user. got:%d want:%d", n, 2)
+	}
+	if n := st.Stopped(); n != 1 {
+		t.Fatalf("unexpected stopped user. got:%d want:%d", n, 1)
+	}
+	if stopped.Load() {
+		t.Fatalf("unexpected stopped all threads")
+	}
+
+	cancel()
+	<-ch
+
+	if n := st.Started(); n != 2 {
+		t.Fatalf("unexpected started user. got:%d want:%d", n, 2)
+	}
+	if n := st.Stopped(); n != 2 {
+		t.Fatalf("unexpected stopped user. got:%d want:%d", n, 2)
+	}
+
+	s.Stop()
 }
