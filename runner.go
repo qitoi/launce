@@ -24,6 +24,8 @@ type Runner interface {
 	Host() string
 	Tags() (tags, excludeTags *[]string)
 
+	Options(v interface{}) error
+
 	RegisterMessage(typ string, handler MessageHandler)
 	SendMessage(typ string, data any) error
 

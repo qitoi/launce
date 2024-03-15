@@ -269,6 +269,13 @@ func (w *Worker) Tags() (tags, excludeTags *[]string) {
 	return nil, nil
 }
 
+func (w *Worker) Options(v interface{}) error {
+	if p := w.parsedOptions.Load(); p != nil {
+		return p.Extract(v)
+	}
+	return nil
+}
+
 func (w *Worker) ReportException(err error) {
 	trace := ""
 	var e wrapError
