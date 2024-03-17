@@ -22,7 +22,7 @@ def on_test_start(environment, **_kwargs):
             environment.runner.send_message("ping", data, worker.id)
 
 
-class CustomMessageUser(User):
+class MyUser(User):
     @task
     def dummy(self):
         ...

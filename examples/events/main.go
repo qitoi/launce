@@ -37,7 +37,7 @@ func main() {
 	}
 
 	var id atomic.Int64
-	worker.RegisterUser("TestUser", func() launce.User {
+	worker.RegisterUser("MyUser", func() launce.User {
 		return &User{
 			ID: id.Add(1),
 		}

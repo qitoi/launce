@@ -48,7 +48,7 @@ type User struct {
 }
 
 func (u *User) WaitTime() launce.WaitTimeFunc {
-	return launce.Between(100*time.Millisecond, 200*time.Millisecond)
+	return launce.ConstantPacing(200 * time.Millisecond)
 }
 
 func (u *User) TaskSet() taskset.TaskSet {

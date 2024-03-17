@@ -41,7 +41,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	worker.RegisterUser("CustomArgsUser", func() launce.User {
+	worker.RegisterUser("MyUser", func() launce.User {
 		return &User{}
 	})
 

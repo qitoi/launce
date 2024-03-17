@@ -7,7 +7,7 @@ def _(parser):
     parser.add_argument("--my-arg-str", type=str, default="hoge", help="str argument")
     parser.add_argument("--my-arg-choice", type=str, choices=["foo", "bar", "baz"], default="foo", help="choice argument")
 
-class CustomArgsUser(User):
+class MyUser(User):
     @task
     def dummy(self):
         ...

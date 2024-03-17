@@ -34,7 +34,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	worker.RegisterUser("TasksetUser", func() launce.User {
+	worker.RegisterUser("MyUser", func() launce.User {
 		return &User{}
 	})
 

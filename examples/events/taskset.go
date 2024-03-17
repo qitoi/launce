@@ -96,10 +96,10 @@ func NewSubTaskSet() *SubTaskSet {
 }
 
 func (t *SubTaskSet) OnStart(ctx context.Context, u launce.User, s taskset.Scheduler) error {
-	fmt.Println("SubTaskSet OnStart")
 	if err := t.Sequential.OnStart(ctx, u, s); err != nil {
 		return err
 	}
+	fmt.Println("SubTaskSet OnStart")
 	return nil
 }
 
