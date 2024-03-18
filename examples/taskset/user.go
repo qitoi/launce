@@ -39,8 +39,8 @@ func (u *User) WaitTime() launce.WaitTimeFunc {
 
 func (u *User) TaskSet() taskset.TaskSet {
 	return taskset.NewRandom(
-		taskset.Weight(taskset.TaskFunc(foo), 1),
-		taskset.Weight(taskset.TaskFunc(u.bar), 2),
+		taskset.Weight(taskset.TaskFunc(task1), 1),
+		taskset.Weight(taskset.TaskFunc(u.task2), 2),
 		taskset.Weight(taskset.NewSequential(
 			taskset.TaskFunc(u.seq1),
 			taskset.TaskFunc(u.seq2),
@@ -49,13 +49,13 @@ func (u *User) TaskSet() taskset.TaskSet {
 	)
 }
 
-func foo(_ context.Context, u launce.User, _ taskset.Scheduler) error {
-	u.Report(http.MethodGet, "/foo", launce.NoneResponseTime, 0, nil)
+func task1(_ context.Context, u launce.User, _ taskset.Scheduler) error {
+	u.Report(http.MethodGet, "/task1", launce.NoneResponseTime, 0, nil)
 	return nil
 }
 
-func (u *User) bar(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
-	u.Report(http.MethodGet, "/bar", launce.NoneResponseTime, 0, nil)
+func (u *User) task2(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
+	u.Report(http.MethodGet, "/task2", launce.NoneResponseTime, 0, nil)
 	return nil
 }
 

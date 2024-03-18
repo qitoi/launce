@@ -42,10 +42,11 @@ func (u *User) Process(ctx context.Context) error {
 	s := time.Now()
 	// do something
 	time.Sleep(time.Duration(rand.Intn(1000)) * time.Millisecond)
-	d := time.Now().Sub(s)
+	responseTime := time.Now().Sub(s)
+	contentLength := rand.Int63n(1024 * 1024)
 
 	// report as successful
-	u.Report(http.MethodGet, "/foo", d, rand.Int63n(1024*1024), nil)
+	u.Report(http.MethodGet, "/foo", responseTime, contentLength, nil)
 
 	if err := u.Wait(ctx); err != nil {
 		return err
@@ -54,10 +55,11 @@ func (u *User) Process(ctx context.Context) error {
 	s = time.Now()
 	// do something
 	time.Sleep(time.Duration(rand.Intn(1000)) * time.Millisecond)
-	d = time.Now().Sub(s)
+	responseTime = time.Now().Sub(s)
+	contentLength = rand.Int63n(1024 * 1024)
 
 	// report as failure
-	u.Report(http.MethodGet, "/bar", d, rand.Int63n(1024*1024), errors.New("unexpected response status code"))
+	u.Report(http.MethodGet, "/bar", responseTime, contentLength, errors.New("unexpected response status code"))
 
 	if err := u.Wait(ctx); err != nil {
 		return err
