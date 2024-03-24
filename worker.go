@@ -14,9 +14,9 @@
  *  limitations under the License.
  */
 
-// Package launce is [Locust] worker library written in Go.
-//
-// [Locust]: https://locust.io/
+// Package launce is Locust worker library written in Go.
+// The aim of this library is to write load test scenarios as simply as locustfile.py
+// and to run load testing with better performance.
 package launce
 
 import (
