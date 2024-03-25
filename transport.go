@@ -39,6 +39,10 @@ var (
 	_ Transport = (*ZmqTransport)(nil)
 )
 
+var (
+	defaultZmqOptions = []zmq4.Option{zmq4.WithDialerMaxRetries(-1)}
+)
+
 // ZmqTransport is transport that uses ZeroMQ.
 type ZmqTransport struct {
 	Host string
@@ -54,7 +58,7 @@ func NewZmqTransport(host string, port int, opts ...zmq4.Option) *ZmqTransport {
 		Host: host,
 		Port: port,
 
-		opts: opts,
+		opts: append(defaultZmqOptions, opts...),
 	}
 }
 

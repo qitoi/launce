@@ -107,7 +107,7 @@ func (u *MyUser) Process(ctx context.Context) error {
 
 func main() {
 	// initializes a ZeroMQ transport for communication with the Locust master
-	transport := launce.NewZmqTransport("localhost", 5557, zmq4.WithDialerMaxRetries(-1))
+	transport := launce.NewZmqTransport("localhost", 5557)
 	// create worker
 	worker, err := launce.NewWorker(transport)
 	if err != nil {

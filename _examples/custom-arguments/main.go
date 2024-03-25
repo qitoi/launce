@@ -23,8 +23,6 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/go-zeromq/zmq4"
-
 	"github.com/qitoi/launce"
 )
 
@@ -35,7 +33,7 @@ type CustomArguments struct {
 }
 
 func main() {
-	transport := launce.NewZmqTransport("localhost", 5557, zmq4.WithDialerMaxRetries(-1))
+	transport := launce.NewZmqTransport("localhost", 5557)
 	worker, err := launce.NewWorker(transport)
 	if err != nil {
 		log.Fatal(err)
