@@ -5,10 +5,21 @@ from locust import User, TaskSet, SequentialTaskSet, task, events, constant
 def on_test_start(environment, **kwargs):
     print("Worker OnTestStart")
 
+@events.test_stopping.add_listener
+def on_test_stopping(environment, **kwargs):
+    print("Worker OnTestStopping")
+
 @events.test_stop.add_listener
 def on_test_stop(environment, **kwargs):
     print("Worker OnTestStop")
 
+@events.quitting.add_listener
+def on_quitting(**kwargs):
+    print("Worker OnQuitting")
+
+@events.quit.add_listener
+def on_quit(**kwargs):
+    print("Worker OnQuit")
 
 class MyTaskSet(TaskSet):
     def on_start(self):

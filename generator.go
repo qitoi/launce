@@ -52,11 +52,14 @@ type LoadGenerator struct {
 	userSpawners map[string]*spawner.Spawner
 	statsCh      chan *stats.Stats
 
-	testStartHandlers []func(ctx context.Context) error
-	testStopHandlers  []func(ctx context.Context)
+	testStartHandlers    []func(ctx context.Context) error
+	testStoppingHandlers []func(ctx context.Context)
+	testStopHandlers     []func(ctx context.Context)
 
 	// cancelStart is a function to cancel the OnTestStart handlers.
 	cancelStart atomic.Value
+
+	started atomic.Bool
 }
 
 // NewLoadGenerator returns a new LoadGenerator.
@@ -93,6 +96,11 @@ func (l *LoadGenerator) OnTestStart(f func(ctx context.Context) error) {
 	l.testStartHandlers = append(l.testStartHandlers, f)
 }
 
+// OnTestStopping registers a function to be called when the load test start stopping.
+func (l *LoadGenerator) OnTestStopping(f func(ctx context.Context)) {
+	l.testStoppingHandlers = append(l.testStoppingHandlers, f)
+}
+
 // OnTestStop registers a function to be called when the load test stops.
 func (l *LoadGenerator) OnTestStop(f func(ctx context.Context)) {
 	l.testStopHandlers = append(l.testStopHandlers, f)
@@ -100,6 +108,10 @@ func (l *LoadGenerator) OnTestStop(f func(ctx context.Context)) {
 
 // Start starts the load test.
 func (l *LoadGenerator) Start() error {
+	if started := l.started.Swap(true); started {
+		return nil
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	l.cancelStart.Store(cancel)
 
@@ -117,10 +129,19 @@ func (l *LoadGenerator) Start() error {
 
 // Stop stops the load test.
 func (l *LoadGenerator) Stop() {
+	if started := l.started.Swap(false); !started {
+		return
+	}
+
 	if f := l.cancelStart.Load(); f != nil {
 		if cancel, ok := f.(context.CancelFunc); ok {
 			cancel()
 		}
+	}
+
+	ctx := context.Background()
+	for _, f := range l.testStoppingHandlers {
+		f(ctx)
 	}
 
 	var wg sync.WaitGroup
@@ -134,7 +155,6 @@ func (l *LoadGenerator) Stop() {
 	}
 	wg.Wait()
 
-	ctx := context.Background()
 	for _, f := range l.testStopHandlers {
 		f(ctx)
 	}

@@ -113,9 +113,13 @@ type Worker struct {
 	heartbeatCh   chan struct{}
 	procInfo      *processInfo
 
-	host            atomic.Value
-	parsedOptions   atomic.Pointer[ParsedOptions]
-	messageHandlers map[string][]MessageHandler
+	host          atomic.Value
+	parsedOptions atomic.Pointer[ParsedOptions]
+
+	messageHandlers  map[string][]MessageHandler
+	connectHandlers  handlers
+	quittingHandlers handlers
+	quitHandlers     handlers
 
 	// cancel is the context cancel function of the join process.
 	cancel atomic.Value
@@ -153,6 +157,8 @@ func NewWorker(transport Transport) (*Worker, error) {
 
 		messageHandlers: map[string][]MessageHandler{},
 	}
+
+	w.cancel.Store(context.CancelFunc(nil))
 
 	return w, nil
 }
@@ -205,12 +211,14 @@ func (w *Worker) Join() error {
 
 	wg.Wait()
 
+	w.quitHandlers.Call()
+
 	return nil
 }
 
 // Stop stops the load test.
 func (w *Worker) Stop() {
-	if atomic.LoadInt64(&w.state) == WorkerStateStopped {
+	if s := atomic.LoadInt64(&w.state); s == WorkerStateCleanup || s == WorkerStateStopped {
 		return
 	}
 	atomic.StoreInt64(&w.state, WorkerStateCleanup)
@@ -220,12 +228,14 @@ func (w *Worker) Stop() {
 
 // Quit stops the worker.
 func (w *Worker) Quit() {
-	w.Stop()
-	if f := w.cancel.Load(); f != nil {
-		if cancel, ok := f.(context.CancelFunc); ok {
-			cancel()
-		}
+	cancel := w.cancel.Swap(context.CancelFunc(nil)).(context.CancelFunc)
+	if cancel == nil {
+		return
 	}
+
+	w.quittingHandlers.Call()
+	w.Stop()
+	cancel()
 }
 
 // RegisterUser registers user.
@@ -233,9 +243,29 @@ func (w *Worker) RegisterUser(name string, f func() User) {
 	w.loadGenerator.RegisterUser(w, name, f)
 }
 
+// OnConnect registers function to be called when the worker connects to the master.
+func (w *Worker) OnConnect(f func()) {
+	w.connectHandlers.Add(f)
+}
+
+// OnQuitting registers function to be called when the worker starts quitting.
+func (w *Worker) OnQuitting(f func()) {
+	w.quittingHandlers.Add(f)
+}
+
+// OnQuit registers function to be called when the worker quits.
+func (w *Worker) OnQuit(f func()) {
+	w.quitHandlers.Add(f)
+}
+
 // OnTestStart registers function to be called when the test starts.
 func (w *Worker) OnTestStart(f func(ctx context.Context) error) {
 	w.loadGenerator.OnTestStart(f)
+}
+
+// OnTestStopping registers function to be called when the load test start stopping.
+func (w *Worker) OnTestStopping(f func(ctx context.Context)) {
+	w.loadGenerator.OnTestStopping(f)
 }
 
 // OnTestStop registers function to be called when the test stops.
@@ -351,6 +381,8 @@ loop:
 			return ctx.Err()
 		}
 	}
+
+	w.connectHandlers.Call()
 
 	return nil
 }
@@ -693,5 +725,17 @@ func convertStatisticsError(key stats.ErrorKey, occurrence int64) *statsPayloadE
 		Method:      key.Method,
 		Error:       key.Error,
 		Occurrences: occurrence,
+	}
+}
+
+type handlers []func()
+
+func (h *handlers) Add(f func()) {
+	*h = append(*h, f)
+}
+
+func (h *handlers) Call() {
+	for _, f := range *h {
+		f()
 	}
 }

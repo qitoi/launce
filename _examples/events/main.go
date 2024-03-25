@@ -43,13 +43,30 @@ func main() {
 		}
 	})
 
+	// launce only
+	worker.OnConnect(func() {
+		fmt.Println("Worker OnConnect")
+	})
+
 	worker.OnTestStart(func(ctx context.Context) error {
 		fmt.Println("Worker OnTestStart")
 		return nil
 	})
 
+	worker.OnTestStopping(func(ctx context.Context) {
+		fmt.Println("Worker OnTestStopping")
+	})
+
 	worker.OnTestStop(func(ctx context.Context) {
 		fmt.Println("Worker OnTestStop")
+	})
+
+	worker.OnQuitting(func() {
+		fmt.Println("Worker OnQuitting")
+	})
+
+	worker.OnQuit(func() {
+		fmt.Println("Worker OnQuit")
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
