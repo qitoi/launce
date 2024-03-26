@@ -42,7 +42,7 @@ func (u *User) Process(ctx context.Context) error {
 	s := time.Now()
 	// do something
 	time.Sleep(time.Duration(rand.Intn(1000)) * time.Millisecond)
-	responseTime := time.Now().Sub(s)
+	responseTime := time.Since(s)
 	contentLength := rand.Int63n(1024 * 1024)
 
 	// report as successful
@@ -55,7 +55,7 @@ func (u *User) Process(ctx context.Context) error {
 	s = time.Now()
 	// do something
 	time.Sleep(time.Duration(rand.Intn(1000)) * time.Millisecond)
-	responseTime = time.Now().Sub(s)
+	responseTime = time.Since(s)
 	contentLength = rand.Int63n(1024 * 1024)
 
 	// report as failure
