@@ -21,6 +21,7 @@ package launce
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -77,7 +78,13 @@ func generateClientID() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return hostname + "_" + uuid.NewString(), nil
+	id, err := uuid.NewRandom()
+	if err != nil {
+		return "", err
+	}
+	var b [32]byte
+	hex.Encode(b[:], id[:])
+	return hostname + "_" + string(b[:]), nil
 }
 
 // Worker provides the functionality of a Locust worker.
