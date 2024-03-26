@@ -58,14 +58,13 @@ package main
 
 import (
 	"context"
+	"errors"
+	"io"
 	"log"
-	"math/rand"
 	"net/http"
 	"os/signal"
 	"syscall"
 	"time"
-
-	"github.com/go-zeromq/zmq4"
 
 	"github.com/qitoi/launce"
 )
@@ -78,6 +77,8 @@ var (
 type MyUser struct {
 	// Inherits default methods from BaseUserImpl
 	launce.BaseUserImpl
+	host   string
+	client *http.Client
 }
 
 // WaitTime defines how long the user waits by Wait method
@@ -85,22 +86,55 @@ func (u *MyUser) WaitTime() launce.WaitTimeFunc {
 	return launce.Constant(1 * time.Second)
 }
 
-// Process defines a single user action
+// OnStart is called when the user starts
+func (u *MyUser) OnStart(ctx context.Context) error {
+	u.host = u.Runner().Host()
+	u.client = &http.Client{}
+	return nil
+}
+
+// Process defines user action
 func (u *MyUser) Process(ctx context.Context) error {
-	t := time.Now()
-
-	// do something
-	time.Sleep(100 * time.Millisecond)
-
-	responseTime := time.Since(t)
-	contentLength := rand.Int63n(1024 * 1024)
-
-	// report stats of a request to master
-	u.Report(http.MethodGet, "/foo", responseTime, contentLength, nil)
+	if err := u.request(http.MethodGet, "/hello"); err != nil {
+		return err
+	}
 
 	if err := u.Wait(ctx); err != nil {
 		return err
 	}
+
+	return nil
+}
+
+func (u *MyUser) request(method, path string) error {
+	req, err := http.NewRequest(method, u.host+path, nil)
+	if err != nil {
+		return err
+	}
+
+	t := time.Now()
+
+	res, err := u.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	// count response size
+	size, err := io.Copy(io.Discard, res.Body)
+	if err != nil {
+		return err
+	}
+
+	responseTime := time.Since(t)
+
+	var resErr error
+	if 400 <= res.StatusCode && res.StatusCode < 600 {
+		resErr = errors.New("unexpected response status code")
+	}
+
+	// report stats of a request to master
+	u.Report(method, path, responseTime, size, resErr)
 
 	return nil
 }
