@@ -229,7 +229,7 @@ func TestConstantThroughput(t *testing.T) {
 	}
 	testcases := []struct {
 		StartTime  time.Time
-		Throughput int
+		Throughput float64
 		Steps      []step
 	}{
 		{
@@ -319,6 +319,24 @@ func TestConstantThroughput(t *testing.T) {
 				{
 					parseTime("2024-01-01T00:00:00.3Z"),
 					1200 * time.Millisecond,
+				},
+			},
+		},
+		{
+			StartTime:  parseTime("2024-01-01T00:00:00Z"),
+			Throughput: 2.5,
+			Steps: []step{
+				{
+					parseTime("2024-01-01T00:00:00Z"),
+					400 * time.Millisecond,
+				},
+				{
+					parseTime("2024-01-01T00:00:00.4Z"),
+					400 * time.Millisecond,
+				},
+				{
+					parseTime("2024-01-01T00:00:00.8Z"),
+					400 * time.Millisecond,
 				},
 			},
 		},

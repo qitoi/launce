@@ -60,6 +60,6 @@ func ConstantPacing(d time.Duration) WaitTimeFunc {
 }
 
 // ConstantThroughput returns a WaitTimeFunc that returns wait time that makes the number of task executions per second equal to taskRunsPerSecond.
-func ConstantThroughput(taskRunsPerSecond int) WaitTimeFunc {
-	return ConstantPacing(time.Second / time.Duration(taskRunsPerSecond))
+func ConstantThroughput(taskRunsPerSecond float64) WaitTimeFunc {
+	return ConstantPacing(time.Duration(float64(time.Second) / taskRunsPerSecond))
 }
