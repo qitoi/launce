@@ -145,21 +145,23 @@ func TestProcessUser_UnexpectedError(t *testing.T) {
 		},
 		Func: func(ctx context.Context) error {
 			count += 1
-			if count == 3 {
+			if count == 1 || count == 2 {
 				return errUser
+			} else if count == 3 {
+				return launce.StopUser
 			}
 			return nil
 		},
 	}
 	err := launce.ProcessUser(context.Background(), &u)
-	if !errors.Is(err, errUser) {
+	if err != nil {
 		t.Fatalf("unexpected result error. got:%v want:%v", err, errUser)
 	}
 	if start != 1 {
 		t.Fatalf("unexpected user start count error. got:%v want:%v", start, 1)
 	}
-	if stop != 0 {
-		t.Fatalf("unexpected user stop count error. got:%v want:%v", stop, 0)
+	if stop != 1 {
+		t.Fatalf("unexpected user stop count error. got:%v want:%v", stop, 1)
 	}
 	if count != 3 {
 		t.Fatalf("unexpected user loop count error. got:%v want:%v", count, 3)

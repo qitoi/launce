@@ -116,12 +116,14 @@ func processUser(ctx context.Context, user User) error {
 			break
 		}
 		if err := user.Process(ctx); err != nil {
-			if !errors.Is(err, context.Canceled) && !errors.Is(err, StopUser) {
-				// unexpected error
-				return err
+			if errors.Is(err, context.Canceled) || errors.Is(err, StopUser) {
+				// locust/user stopped
+				break
 			}
-			// locust/user stopped
-			break
+			// unexpected error
+			if r := user.Runner(); r != nil {
+				r.ReportException(err)
+			}
 		}
 	}
 
