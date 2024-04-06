@@ -95,7 +95,7 @@ func (u *MyUser) OnStart(ctx context.Context) error {
 
 // Process defines user action
 func (u *MyUser) Process(ctx context.Context) error {
-	if err := u.request(http.MethodGet, "/hello"); err != nil {
+	if err := u.request(ctx, http.MethodGet, "/hello"); err != nil {
 		return err
 	}
 
@@ -106,11 +106,13 @@ func (u *MyUser) Process(ctx context.Context) error {
 	return nil
 }
 
-func (u *MyUser) request(method, path string) error {
+func (u *MyUser) request(ctx context.Context, method, path string) error {
 	req, err := http.NewRequest(method, u.host+path, nil)
 	if err != nil {
 		return err
 	}
+
+	req = req.WithContext(ctx)
 
 	t := time.Now()
 
