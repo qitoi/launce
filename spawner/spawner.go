@@ -40,13 +40,14 @@ const (
 type Spawner struct {
 	mode      RestartMode
 	spawnFunc SpawnFunc
-	count     int
+	count     int64
 	spawned   int64
 
 	spawnChMutex sync.Mutex
 	spawnCh      chan struct{}
 
-	stop func()
+	stop      func()
+	stopMutex sync.Mutex
 
 	threads     threadList
 	threadMutex sync.Mutex
@@ -65,15 +66,13 @@ func New(f SpawnFunc, mode RestartMode) *Spawner {
 
 // Cap sets the maximum number of concurrent goroutines.
 func (s *Spawner) Cap(count int) {
-	if s.count == count {
+	if atomic.SwapInt64(&s.count, int64(count)) == int64(count) {
 		return
 	}
 
-	s.count = count
-
 	if s.isRunning() {
 		// spawnWorker が動いている場合は一度止めて別の spawnWorkerを動かす
-		s.Start()
+		s.spawnWorker(count)
 	} else {
 		// spawnWorker が動いていない場合はユーザーリストの上限のみ変更
 		s.threads.Cap(count)
@@ -87,14 +86,16 @@ func (s *Spawner) Count() int64 {
 
 // Start starts the goroutine manager.
 func (s *Spawner) Start() {
-	s.Stop()
-	s.spawnWorker(s.count)
+	s.spawnWorker(int(atomic.LoadInt64(&s.count)))
 }
 
 // Stop stops the goroutine manager.
 func (s *Spawner) Stop() {
+	s.stopMutex.Lock()
+	defer s.stopMutex.Unlock()
 	if s.stop != nil {
 		s.stop()
+		s.stop = nil
 	}
 }
 
@@ -110,6 +111,8 @@ func (s *Spawner) StopAllThreads() {
 }
 
 func (s *Spawner) isRunning() bool {
+	s.stopMutex.Lock()
+	defer s.stopMutex.Unlock()
 	return s.stop != nil
 }
 
@@ -117,12 +120,17 @@ func (s *Spawner) spawnWorker(count int) {
 	spawnCh := make(chan struct{}, count)
 	stopCh := make(chan struct{})
 	stopWaitCh := make(chan struct{})
+
+	s.stopMutex.Lock()
+	if s.stop != nil {
+		s.stop()
+	}
 	s.stop = func() {
 		// spawn用の goroutine に停止の指令を出して、 goroutine が終了するのを待つ
 		close(stopCh)
 		<-stopWaitCh
-		s.stop = nil
 	}
+	s.stopMutex.Unlock()
 
 	s.spawnChMutex.Lock()
 	oldSpawnCh := s.spawnCh
