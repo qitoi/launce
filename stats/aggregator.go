@@ -17,6 +17,7 @@
 package stats
 
 import (
+	"sync/atomic"
 	"time"
 )
 
@@ -29,24 +30,34 @@ type reportRequest struct {
 	Error         error
 }
 
-// Reporter manages process of reporting statistics of request results.
-type Reporter struct {
-	ch chan<- reportRequest
+// Aggregator manages process of reporting statistics of request results.
+type Aggregator struct {
+	ch      chan<- reportRequest
+	count   int64
+	stopped atomic.Bool
 }
 
-// Start starts reporting process.
-func (r *Reporter) Start(statsCh chan<- *Stats, reportInterval time.Duration) {
-	r.ch = r.start(statsCh, reportInterval)
+func NewCollector(statsCh chan<- *Stats, reportInterval time.Duration) *Aggregator {
+	c := &Aggregator{}
+	c.ch = c.start(statsCh, reportInterval)
+	return c
 }
 
-// Stop stops reporting process.
-func (r *Reporter) Stop() {
-	close(r.ch)
+// Retain increments ref count of aggregation process.
+func (a *Aggregator) Retain() {
+	atomic.AddInt64(&a.count, 1)
+}
+
+// Release decrements ref count of aggregation process.
+func (a *Aggregator) Release() {
+	if atomic.AddInt64(&a.count, -1) == 0 {
+		close(a.ch)
+	}
 }
 
 // Report reports statistics of request.
-func (r *Reporter) Report(requestType, name string, responseTime time.Duration, contentLength int64, err error) {
-	r.ch <- reportRequest{
+func (a *Aggregator) Report(requestType, name string, responseTime time.Duration, contentLength int64, err error) {
+	a.ch <- reportRequest{
 		Now:           time.Now(),
 		RequestType:   requestType,
 		Name:          name,
@@ -56,7 +67,7 @@ func (r *Reporter) Report(requestType, name string, responseTime time.Duration, 
 	}
 }
 
-func (r *Reporter) start(statsCh chan<- *Stats, reportInterval time.Duration) chan<- reportRequest {
+func (a *Aggregator) start(statsCh chan<- *Stats, reportInterval time.Duration) chan<- reportRequest {
 	s := New()
 	ch := make(chan reportRequest, 10)
 

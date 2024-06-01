@@ -29,7 +29,8 @@ import (
 )
 
 const (
-	defaultStatsNotifyInterval = 100 * time.Millisecond
+	defaultStatsNotifyInterval   = 100 * time.Millisecond
+	defaultStatsAggregationUsers = 100
 )
 
 // UnknownUserError is an error that trying to spawn unregistered user.
@@ -49,6 +50,9 @@ type LoadGenerator struct {
 	// StatsNotifyInterval is the interval to notify stats.
 	StatsNotifyInterval time.Duration
 
+	// StatsAggregationUsers is the number of users per StatsAggregator
+	StatsAggregationUsers int
+
 	userSpawners map[string]*spawner.Spawner
 	statsCh      chan *stats.Stats
 
@@ -60,13 +64,18 @@ type LoadGenerator struct {
 	cancelStart atomic.Value
 
 	started atomic.Bool
+
+	statsAggregator *stats.Aggregator
+	aggMutex        sync.Mutex
+	aggUserCounter  int
 }
 
 // NewLoadGenerator returns a new LoadGenerator.
 func NewLoadGenerator() *LoadGenerator {
 	return &LoadGenerator{
-		RestartMode:         spawner.RestartNever,
-		StatsNotifyInterval: defaultStatsNotifyInterval,
+		RestartMode:           spawner.RestartNever,
+		StatsNotifyInterval:   defaultStatsNotifyInterval,
+		StatsAggregationUsers: defaultStatsAggregationUsers,
 
 		userSpawners: map[string]*spawner.Spawner{},
 		statsCh:      make(chan *stats.Stats),
@@ -76,9 +85,20 @@ func NewLoadGenerator() *LoadGenerator {
 // RegisterUser registers a user class.
 func (l *LoadGenerator) RegisterUser(r Runner, name string, f func() User) {
 	spawnFunc := func(ctx context.Context) {
-		rep := &stats.Reporter{}
-		rep.Start(l.statsCh, l.StatsNotifyInterval)
-		defer rep.Stop()
+		l.aggMutex.Lock()
+		if l.aggUserCounter == 0 {
+			if l.statsAggregator != nil {
+				l.statsAggregator.Release()
+			}
+			l.statsAggregator = stats.NewCollector(l.statsCh, l.StatsNotifyInterval)
+			l.statsAggregator.Retain()
+		}
+		l.aggUserCounter = (l.aggUserCounter + 1) % l.StatsAggregationUsers
+		rep := l.statsAggregator
+		rep.Retain()
+		l.aggMutex.Unlock()
+
+		defer rep.Release()
 
 		user := f()
 		user.Init(user, r, rep)
@@ -115,12 +135,21 @@ func (l *LoadGenerator) Start() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	l.cancelStart.Store(cancel)
 
+	l.aggMutex.Lock()
+	l.aggUserCounter = 0
+	if l.statsAggregator != nil {
+		l.statsAggregator.Release()
+	}
+	l.statsAggregator = nil
+	l.aggMutex.Unlock()
+
 	for _, f := range l.testStartHandlers {
 		if err := f(ctx); err != nil {
 			return err
 		}
 	}
 	for _, s := range l.userSpawners {
+		s.Cap(0)
 		s.Start()
 	}
 
