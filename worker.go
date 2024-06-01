@@ -53,7 +53,6 @@ const (
 	defaultMetricsMonitorInterval = 5 * time.Second
 	defaultMasterHeartbeatTimeout = 60 * time.Second
 	defaultStatsReportInterval    = 3 * time.Second
-	defaultStatsAggregateInterval = 100 * time.Millisecond
 
 	connectTimeout    = 5 * time.Second
 	connectRetryCount = 60
@@ -110,6 +109,9 @@ type Worker struct {
 	// StatsAggregateInterval is the interval at which the worker aggregates statistics of users.
 	StatsAggregateInterval time.Duration
 
+	// StatsAggregationUsers is the number of users for which an Aggregator aggregates request statistics.
+	StatsAggregationUsers int
+
 	loadGenerator *LoadGenerator
 	index         int64
 	state         WorkerState
@@ -150,7 +152,8 @@ func NewWorker(transport Transport) (*Worker, error) {
 		MetricsMonitorInterval: defaultMetricsMonitorInterval,
 		MasterHeartbeatTimeout: defaultMasterHeartbeatTimeout,
 		StatsReportInterval:    defaultStatsReportInterval,
-		StatsAggregateInterval: defaultStatsAggregateInterval,
+		StatsAggregateInterval: defaultStatsNotifyInterval,
+		StatsAggregationUsers:  defaultStatsAggregationUsers,
 
 		loadGenerator: NewLoadGenerator(),
 		index:         -1,
@@ -175,6 +178,7 @@ func (w *Worker) Join() error {
 	var wg sync.WaitGroup
 
 	w.loadGenerator.StatsNotifyInterval = w.StatsAggregateInterval
+	w.loadGenerator.StatsAggregationUsers = w.StatsAggregationUsers
 
 	// マスターへのコネクション確立前に Quit された場合は、トランスポートのコンテキストをキャンセルし、トランスポートを閉じることで終了させる
 	ctx, cancel := context.WithCancel(context.Background())
