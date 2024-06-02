@@ -708,7 +708,7 @@ func convertStatisticsPayload(entries stats.Entries, total *stats.Entry, errors 
 
 func convertStatisticsEntry(name, method string, entry *stats.Entry) *statsPayloadEntry {
 	var minResponseTime *float64
-	if entry.MinResponseTime != nil {
+	if entry.MinResponseTime >= 0 {
 		minResponseTime = new(float64)
 		*minResponseTime = float64(entry.MinResponseTime.Nanoseconds()) / 1e6 // [ms]
 	}
