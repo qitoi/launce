@@ -60,7 +60,7 @@ type Entry struct {
 	LastRequestTimestamp int64 // [ns]
 
 	TotalResponseTime time.Duration
-	MinResponseTime   *time.Duration
+	MinResponseTime   time.Duration
 	MaxResponseTime   time.Duration
 
 	TotalContentLength int64
@@ -86,10 +86,10 @@ func (e *Entry) Add(now time.Time, responseTime time.Duration, contentLength int
 		e.NumNoneRequests += 1
 	} else {
 		e.TotalResponseTime += responseTime
-		if e.MinResponseTime == nil {
-			e.MinResponseTime = &responseTime
-		} else if *e.MinResponseTime > responseTime {
-			*e.MinResponseTime = responseTime
+		if e.MinResponseTime < 0 {
+			e.MinResponseTime = responseTime
+		} else if e.MinResponseTime < 0 || e.MinResponseTime > responseTime {
+			e.MinResponseTime = responseTime
 		}
 		e.MaxResponseTime = max(e.MaxResponseTime, responseTime)
 		rounded := roundResponseTime(responseTime)
@@ -140,12 +140,8 @@ func (e *Entry) Merge(src *Entry) {
 		e.LastRequestTimestamp = src.LastRequestTimestamp
 	}
 	e.TotalResponseTime += src.TotalResponseTime
-	if e.MinResponseTime == nil {
-		var d time.Duration
-		e.MinResponseTime = &d
-	}
-	if src.MinResponseTime != nil && *e.MinResponseTime > *src.MinResponseTime {
-		*e.MinResponseTime = *src.MinResponseTime
+	if e.MinResponseTime < 0 || (src.MinResponseTime >= 0 && e.MinResponseTime > src.MinResponseTime) {
+		e.MinResponseTime = src.MinResponseTime
 	}
 	if e.MaxResponseTime < src.MaxResponseTime {
 		e.MaxResponseTime = src.MaxResponseTime
@@ -170,7 +166,7 @@ func newEntry() *Entry {
 		NumFailuresPerSec:    map[int64]int64{},
 		LastRequestTimestamp: 0,
 		TotalResponseTime:    0,
-		MinResponseTime:      nil,
+		MinResponseTime:      -1,
 		MaxResponseTime:      0,
 		ResponseTimes:        map[int64]int64{},
 	}

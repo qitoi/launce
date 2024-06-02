@@ -303,16 +303,16 @@ func TestStats_Entries_TotalResponseTime(t *testing.T) {
 
 func TestStats_Entries_MinResponseTime(t *testing.T) {
 	s := getStats()
-	extractor := func(e *stats.Entry) *time.Duration {
+	extractor := func(e *stats.Entry) time.Duration {
 		return e.MinResponseTime
 	}
 
 	fields := extractEntriesField(s, extractor)
-	expected := map[string]*time.Duration{
-		"GET:/test1": ptr(116 * time.Millisecond),
-		"GET:/test2": ptr(8 * time.Millisecond),
-		"GET:/test3": nil,
-		"GET:/error": ptr(121 * time.Millisecond),
+	expected := map[string]time.Duration{
+		"GET:/test1": 116 * time.Millisecond,
+		"GET:/test2": 8 * time.Millisecond,
+		"GET:/test3": -1,
+		"GET:/error": 121 * time.Millisecond,
 	}
 	if !reflect.DeepEqual(fields, expected) {
 		t.Fatalf("invalid value. got:%v, want:%v", fields, expected)
@@ -321,7 +321,7 @@ func TestStats_Entries_MinResponseTime(t *testing.T) {
 	s.Flush()
 
 	fields = extractEntriesField(s, extractor)
-	expected = map[string]*time.Duration{}
+	expected = map[string]time.Duration{}
 	if !reflect.DeepEqual(fields, expected) {
 		t.Fatalf("invalid value. got:%v, want:%v", fields, expected)
 	}
