@@ -36,6 +36,11 @@ func NewSequential(tasks ...Task) *Sequential {
 	return s
 }
 
+func (s *Sequential) Init(task Task) {
+	s.BaseImpl.Init(task)
+	s.index = 0
+}
+
 func (s *Sequential) Len() int {
 	return len(s.filtered)
 }
