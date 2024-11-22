@@ -1,6 +1,4 @@
-from locust import User, task
+from locust import User
 
 class MyUser(User):
-    @task
-    def dummy(self):
-        ...
+    ...

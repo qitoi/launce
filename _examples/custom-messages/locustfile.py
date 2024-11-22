@@ -1,4 +1,4 @@
-from locust import User, task, events
+from locust import User, events
 from locust.runners import WorkerRunner
 
 
@@ -23,6 +23,4 @@ def on_test_start(environment, **_kwargs):
 
 
 class MyUser(User):
-    @task
-    def dummy(self):
-        ...
+    ...

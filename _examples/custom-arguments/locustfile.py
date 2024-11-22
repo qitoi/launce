@@ -1,4 +1,4 @@
-from locust import User, task, events
+from locust import User, events
 
 
 @events.init_command_line_parser.add_listener
@@ -8,6 +8,4 @@ def _(parser):
     parser.add_argument("--my-arg-choice", type=str, choices=["foo", "bar", "baz"], default="foo", help="choice argument")
 
 class MyUser(User):
-    @task
-    def dummy(self):
-        ...
+    ...
