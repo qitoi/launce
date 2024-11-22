@@ -40,12 +40,10 @@ Master script must define user class, but is not meant to implement user behavio
 
 ```python
 # locustfile.py
-from locust import User, task
+from locust import User
 
 class MyUser(User):
-    @task
-    def dummy(self):
-        ...
+    ...
 ```
 
 ### Worker Script
