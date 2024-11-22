@@ -1,5 +1,11 @@
 # Change Log
 
+## Unreleased
+
+### Fixed
+
+- SequentialでInterruptTaskSetを返しても続けてタスクが実行される問題を修正
+
 ## v1.1.0 -2024-06-02
 
 ### Changed

@@ -108,3 +108,279 @@ func TestSequential_Run(t *testing.T) {
 		})
 	}
 }
+
+func TestSequential_Rerun(t *testing.T) {
+	errUnknown := errors.New("unknown error")
+
+	testcases := []struct {
+		Name     string
+		Tasks    []func() error
+		Result   error
+		Expected []int
+	}{
+		{
+			Name: "Re-run Sequential TaskSet (StopUser)",
+			Tasks: []func() error{
+				func() error {
+					return nil
+				},
+				func() error {
+					return launce.StopUser
+				},
+				func() error {
+					return launce.StopUser
+				},
+			},
+			Result:   launce.StopUser,
+			Expected: []int{0, 1, 0, 1},
+		},
+		{
+			Name: "Re-run Sequential TaskSet (RescheduleTask)",
+			Tasks: []func() error{
+				func() error {
+					return nil
+				},
+				func() error {
+					return taskset.RescheduleTask
+				},
+				func() error {
+					return launce.StopUser
+				},
+			},
+			Result:   launce.StopUser,
+			Expected: []int{0, 1, 2, 0, 1, 2},
+		},
+		{
+			Name: "Re-run Sequential TaskSet (RescheduleTaskImmediately)",
+			Tasks: []func() error{
+				func() error {
+					return nil
+				},
+				func() error {
+					return taskset.RescheduleTaskImmediately
+				},
+				func() error {
+					return launce.StopUser
+				},
+			},
+			Result:   launce.StopUser,
+			Expected: []int{0, 1, 2, 0, 1, 2},
+		},
+		{
+			Name: "Re-run Sequential TaskSet (InterruptTaskSet)",
+			Tasks: []func() error{
+				func() error {
+					return nil
+				},
+				func() error {
+					return taskset.InterruptTaskSet
+				},
+				func() error {
+					return launce.StopUser
+				},
+			},
+			Result:   taskset.RescheduleTask,
+			Expected: []int{0, 1, 0, 1},
+		},
+		{
+			Name: "Re-run Sequential TaskSet (InterruptTaskSetImmediately)",
+			Tasks: []func() error{
+				func() error {
+					return nil
+				},
+				func() error {
+					return taskset.InterruptTaskSetImmediately
+				},
+				func() error {
+					return launce.StopUser
+				},
+			},
+			Result:   taskset.RescheduleTaskImmediately,
+			Expected: []int{0, 1, 0, 1},
+		},
+		{
+			Name: "Re-run Sequential TaskSet (Unknown Error)",
+			Tasks: []func() error{
+				func() error {
+					return nil
+				},
+				func() error {
+					return errUnknown
+				},
+				func() error {
+					return launce.StopUser
+				},
+			},
+			Result:   launce.StopUser,
+			Expected: []int{0, 1, 2, 0, 1, 2},
+		},
+	}
+
+	for _, testcase := range testcases {
+		t.Run(testcase.Name, func(t *testing.T) {
+			var result []int
+			var tasks []taskset.Task
+
+			for i, task := range testcase.Tasks {
+				i, task := i, task
+				tasks = append(tasks, taskset.TaskFunc(func(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
+					result = append(result, i)
+					return task()
+				}))
+			}
+
+			seq := taskset.NewSequential(tasks...)
+			_ = taskset.Run(context.Background(), seq, nil)
+			err := taskset.Run(context.Background(), seq, nil)
+
+			if !errors.Is(err, testcase.Result) {
+				t.Fatalf("unexpected error. got:%v, want:%v", err, testcase.Result)
+			}
+
+			if slices.Compare(result, testcase.Expected) != 0 {
+				t.Fatalf("unexpected result. got:%v, want:%v", result, testcase.Expected)
+			}
+		})
+	}
+}
+
+func TestSequential_RerunNestedTaskSet(t *testing.T) {
+	errUnknown := errors.New("unknown error")
+
+	testcases := []struct {
+		Name     string
+		Tasks    []func() error
+		Result   error
+		Expected []int
+	}{
+		{
+			Name: "Re-run Nested Sequential TaskSet (StopUser)",
+			Tasks: []func() error{
+				func() error {
+					return nil
+				},
+				func() error {
+					return launce.StopUser
+				},
+				func() error {
+					return launce.StopUser
+				},
+			},
+			Result:   launce.StopUser,
+			Expected: []int{0, 1, 0, 1},
+		},
+		{
+			Name: "Re-run Nested Sequential TaskSet (RescheduleTask)",
+			Tasks: []func() error{
+				func() error {
+					return nil
+				},
+				func() error {
+					return taskset.RescheduleTask
+				},
+				func() error {
+					return launce.StopUser
+				},
+			},
+			Result:   launce.StopUser,
+			Expected: []int{0, 1, 2, 0, 1, 2},
+		},
+		{
+			Name: "Re-run Nested Sequential TaskSet (RescheduleTaskImmediately)",
+			Tasks: []func() error{
+				func() error {
+					return nil
+				},
+				func() error {
+					return taskset.RescheduleTaskImmediately
+				},
+				func() error {
+					return launce.StopUser
+				},
+			},
+			Result:   launce.StopUser,
+			Expected: []int{0, 1, 2, 0, 1, 2},
+		},
+		{
+			Name: "Re-run Nested Sequential TaskSet (InterruptTaskSet)",
+			Tasks: []func() error{
+				func() error {
+					return nil
+				},
+				func() error {
+					return taskset.InterruptTaskSet
+				},
+				func() error {
+					return launce.StopUser
+				},
+			},
+			Result:   launce.StopUser,
+			Expected: []int{0, 1, 0, 1},
+		},
+		{
+			Name: "Re-run Nested Sequential TaskSet (InterruptTaskSetImmediately)",
+			Tasks: []func() error{
+				func() error {
+					return nil
+				},
+				func() error {
+					return taskset.InterruptTaskSetImmediately
+				},
+				func() error {
+					return launce.StopUser
+				},
+			},
+			Result:   launce.StopUser,
+			Expected: []int{0, 1, 0, 1},
+		},
+		{
+			Name: "Re-run Nested Sequential TaskSet (Unknown Error)",
+			Tasks: []func() error{
+				func() error {
+					return nil
+				},
+				func() error {
+					return errUnknown
+				},
+				func() error {
+					return launce.StopUser
+				},
+			},
+			Result:   launce.StopUser,
+			Expected: []int{0, 1, 2, 0, 1, 2},
+		},
+	}
+
+	for _, testcase := range testcases {
+		t.Run(testcase.Name, func(t *testing.T) {
+			var result []int
+			var tasks []taskset.Task
+
+			for i, task := range testcase.Tasks {
+				i, task := i, task
+				tasks = append(tasks, taskset.TaskFunc(func(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
+					result = append(result, i)
+					return task()
+				}))
+			}
+
+			childSeq := taskset.NewSequential(tasks...)
+			seq := taskset.NewSequential(
+				childSeq,
+				taskset.TaskFunc(func(_ context.Context, _ launce.User, _ taskset.Scheduler) error {
+					return launce.StopUser
+				}),
+			)
+			_ = taskset.Run(context.Background(), seq, nil)
+			err := taskset.Run(context.Background(), seq, nil)
+
+			if !errors.Is(err, testcase.Result) {
+				t.Fatalf("unexpected error. got:%v, want:%v", err, testcase.Result)
+			}
+
+			if slices.Compare(result, testcase.Expected) != 0 {
+				t.Fatalf("unexpected result. got:%v, want:%v", result, testcase.Expected)
+			}
+		})
+	}
+}
