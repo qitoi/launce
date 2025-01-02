@@ -27,10 +27,6 @@ import (
 	"github.com/qitoi/launce/stats"
 )
 
-func ptr[T any](v T) *T {
-	return &v
-}
-
 func parseTime(s string) time.Time {
 	t, err := time.Parse(time.RFC3339Nano, s)
 	if err != nil {
@@ -432,5 +428,44 @@ func TestStats_Errors(t *testing.T) {
 	expected = stats.Errors{}
 	if !reflect.DeepEqual(s.Errors, expected) {
 		t.Fatalf("invalid value. got:%v, want:%v", s.Errors, expected)
+	}
+}
+
+func TestStats_StartTime(t *testing.T) {
+	s := getStats()
+
+	time.Sleep(1 * time.Millisecond)
+
+	_, total, _ := s.Flush()
+	t1 := total.StartTime
+
+	if t1 == 0 {
+		t.Fatalf("invalid stats start_time. got:%v", t1)
+	}
+
+	time.Sleep(1 * time.Millisecond)
+
+	_, total, _ = s.Flush()
+	t2 := total.StartTime
+
+	if t2 == 0 {
+		t.Fatalf("invalid stats start_time. got:%v", t2)
+	}
+
+	if t1 >= t2 {
+		t.Fatalf("invalid stats start_time. got:%v, want:%v", t1, t2)
+	}
+
+	time.Sleep(1 * time.Millisecond)
+
+	_, total, _ = s.Flush()
+	t3 := total.StartTime
+
+	if t3 == 0 {
+		t.Fatalf("invalid stats start_time. got:%v", t2)
+	}
+
+	if t2 >= t3 {
+		t.Fatalf("invalid stats start_time. got:%v, want:%v", t2, t3)
 	}
 }

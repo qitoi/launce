@@ -25,27 +25,31 @@ import (
 type Stats struct {
 	Entries Entries
 	Errors  Errors
+
+	startTime int64
 }
 
 // New returns a new Stats.
 func New() *Stats {
-	return &Stats{
-		Entries: Entries{},
-		Errors:  Errors{},
-	}
+	s := &Stats{}
+	s.Clear()
+	return s
 }
 
 // Flush returns the current statistics and clears the statistics.
 func (s *Stats) Flush() (Entries, *Entry, Errors) {
 	entries, errors := s.Entries, s.Errors
-	s.Entries = Entries{}
-	s.Errors = Errors{}
 	total := entries.Aggregate()
+	total.StartTime = s.startTime
+
+	s.Clear()
+
 	return entries, total, errors
 }
 
 // Clear clears the statistics.
 func (s *Stats) Clear() {
+	s.startTime = time.Now().UnixNano()
 	s.Entries = Entries{}
 	s.Errors = Errors{}
 }

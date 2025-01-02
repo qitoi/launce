@@ -1,5 +1,11 @@
 # Change Log
 
+## Unreleased
+
+### Fixed
+
+- Download ReportでStartTimeやRPSが0になる問題を修正
+
 ## v1.1.1 - 2024-11-23
 
 ### Fixed
