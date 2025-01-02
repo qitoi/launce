@@ -72,45 +72,25 @@ var (
 	_ Runner = (*Worker)(nil)
 )
 
-func generateClientID() (string, error) {
-	hostname, err := os.Hostname()
-	if err != nil {
-		return "", err
-	}
-	id, err := uuid.NewRandom()
-	if err != nil {
-		return "", err
-	}
-	var b [32]byte
-	hex.Encode(b[:], id[:])
-	return hostname + "_" + string(b[:]), nil
-}
-
 // Worker provides the functionality of a Locust worker.
 type Worker struct {
 	// Version is the version of the worker
-	Version string
+	version string
 
-	// ClientID is the unique identifier of the worker.
-	ClientID string
+	// clientID is the unique identifier of the worker.
+	clientID string
 
-	// HeartbeatInterval is the interval at which the worker sends a heartbeat message to the master.
-	HeartbeatInterval time.Duration
+	// heartbeatInterval is the interval at which the worker sends a heartbeat message to the master.
+	heartbeatInterval time.Duration
 
-	// MasterHeartbeatTimeout is the timeout for the heartbeat from the master.
-	MasterHeartbeatTimeout time.Duration
+	// masterHeartbeatTimeout is the timeout for the heartbeat from the master.
+	masterHeartbeatTimeout time.Duration
 
-	// MetricsMonitorInterval is the interval at which the worker monitors the process metrics.
-	MetricsMonitorInterval time.Duration
+	// metricsMonitorInterval is the interval at which the worker monitors the process metrics.
+	metricsMonitorInterval time.Duration
 
-	// StatsReportInterval is the interval at which the worker sends statistics to the master.
-	StatsReportInterval time.Duration
-
-	// StatsAggregateInterval is the interval at which the worker aggregates statistics of users.
-	StatsAggregateInterval time.Duration
-
-	// StatsAggregationUsers is the number of users for which an Aggregator aggregates request statistics.
-	StatsAggregationUsers int
+	// statsReportInterval is the interval at which the worker sends statistics to the master.
+	statsReportInterval time.Duration
 
 	loadGenerator *LoadGenerator
 	index         int64
@@ -135,7 +115,7 @@ type Worker struct {
 }
 
 // NewWorker creates an instance of Worker.
-func NewWorker(transport Transport) (*Worker, error) {
+func NewWorker(transport Transport, options ...WorkerOption) (*Worker, error) {
 	id, err := generateClientID()
 	if err != nil {
 		return nil, err
@@ -146,14 +126,12 @@ func NewWorker(transport Transport) (*Worker, error) {
 	}
 
 	w := &Worker{
-		Version:                fmt.Sprintf("%s.launce-%s", LocustVersion, Version),
-		ClientID:               id,
-		HeartbeatInterval:      defaultHeartbeatInterval,
-		MetricsMonitorInterval: defaultMetricsMonitorInterval,
-		MasterHeartbeatTimeout: defaultMasterHeartbeatTimeout,
-		StatsReportInterval:    defaultStatsReportInterval,
-		StatsAggregateInterval: defaultStatsNotifyInterval,
-		StatsAggregationUsers:  defaultStatsAggregationUsers,
+		version:                fmt.Sprintf("%s.launce-%s", LocustVersion, Version),
+		clientID:               id,
+		heartbeatInterval:      defaultHeartbeatInterval,
+		metricsMonitorInterval: defaultMetricsMonitorInterval,
+		masterHeartbeatTimeout: defaultMasterHeartbeatTimeout,
+		statsReportInterval:    defaultStatsReportInterval,
 
 		loadGenerator: NewLoadGenerator(),
 		index:         -1,
@@ -170,15 +148,26 @@ func NewWorker(transport Transport) (*Worker, error) {
 
 	w.cancel.Store(context.CancelFunc(nil))
 
+	for _, option := range options {
+		option(w)
+	}
+
 	return w, nil
+}
+
+// Version returns the version of the worker
+func (w *Worker) Version() string {
+	return w.version
+}
+
+// ClientID returns the unique identifier of the worker
+func (w *Worker) ClientID() string {
+	return w.clientID
 }
 
 // Join connects to the master and starts the worker processes.
 func (w *Worker) Join() error {
 	var wg sync.WaitGroup
-
-	w.loadGenerator.StatsNotifyInterval = w.StatsAggregateInterval
-	w.loadGenerator.StatsAggregationUsers = w.StatsAggregationUsers
 
 	// マスターへのコネクション確立前に Quit された場合は、トランスポートのコンテキストをキャンセルし、トランスポートを閉じることで終了させる
 	ctx, cancel := context.WithCancel(context.Background())
@@ -202,10 +191,10 @@ func (w *Worker) Join() error {
 
 	var procWg sync.WaitGroup
 
-	w.startHeartbeatProcess(ctx, &procWg, w.HeartbeatInterval)
-	w.startHeartbeatCheckProcess(ctx, &procWg, w.MasterHeartbeatTimeout)
-	w.startMetricsMonitorProcess(ctx, &procWg, w.MetricsMonitorInterval)
-	w.startStatsProcess(ctx, &procWg, w.StatsReportInterval)
+	w.startHeartbeatProcess(ctx, &procWg, w.heartbeatInterval)
+	w.startHeartbeatCheckProcess(ctx, &procWg, w.masterHeartbeatTimeout)
+	w.startMetricsMonitorProcess(ctx, &procWg, w.metricsMonitorInterval)
+	w.startStatsProcess(ctx, &procWg, w.statsReportInterval)
 	w.startSpawnProcess(ctx, &procWg)
 
 	procWg.Wait()
@@ -341,7 +330,7 @@ func (w *Worker) SendMessage(typ string, data any) error {
 	msg := message{
 		Type:   typ,
 		Data:   data,
-		NodeID: w.ClientID,
+		NodeID: w.clientID,
 	}
 	b, err := encodeMessage(msg)
 	if err != nil {
@@ -351,7 +340,7 @@ func (w *Worker) SendMessage(typ string, data any) error {
 }
 
 func (w *Worker) open(ctx context.Context) error {
-	return w.transport.Open(ctx, w.ClientID)
+	return w.transport.Open(ctx, w.clientID)
 }
 
 func (w *Worker) close() error {
@@ -372,7 +361,7 @@ clear:
 		}
 	}
 
-	if err := w.SendMessage(messageClientReady, w.Version); err != nil {
+	if err := w.SendMessage(messageClientReady, w.version); err != nil {
 		return err
 	}
 
@@ -457,7 +446,7 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 				w.parsedOptions.Store(nil)
 				_ = w.SendMessage(messageClientStopped, nil)
 				atomic.StoreInt64(&w.state, WorkerStateInit)
-				_ = w.SendMessage(messageClientReady, w.Version)
+				_ = w.SendMessage(messageClientReady, w.version)
 
 			case messageReconnect:
 				_ = w.close()
@@ -749,4 +738,18 @@ func (h *handlers) Call() {
 	for _, f := range *h {
 		f()
 	}
+}
+
+func generateClientID() (string, error) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return "", err
+	}
+	id, err := uuid.NewRandom()
+	if err != nil {
+		return "", err
+	}
+	var b [32]byte
+	hex.Encode(b[:], id[:])
+	return hostname + "_" + string(b[:]), nil
 }

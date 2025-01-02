@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Workerのオプション指定をFunctional Optionsに変更
+
 ### Fixed
 
 - Download ReportでStartTimeやRPSが0になる問題を修正

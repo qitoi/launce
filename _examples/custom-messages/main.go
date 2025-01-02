@@ -55,7 +55,7 @@ func main() {
 		fmt.Printf("receive ping: %v\n", payload.Message)
 
 		pongPayload := &PongPayload{
-			Message: fmt.Sprintf("pong worker %s", worker.ClientID),
+			Message: fmt.Sprintf("pong worker %s", worker.ClientID()),
 		}
 		if err := worker.SendMessage("pong", pongPayload); err != nil {
 			fmt.Printf("message send error: %v\n", err)

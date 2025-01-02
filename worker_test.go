@@ -91,7 +91,7 @@ func TestWorker_RegisterMessage(t *testing.T) {
 	_ = master.Send(launce.SendMessage{
 		Type:   "custom-message",
 		Data:   "hello",
-		NodeID: w.ClientID,
+		NodeID: w.ClientID(),
 	})
 
 	customMessage := <-ch
@@ -104,8 +104,8 @@ func TestWorker_RegisterMessage(t *testing.T) {
 	if customMessage.Type != "custom-message" {
 		t.Fatalf("received custome message type mismatch. got:%v want:%v", customMessage.Type, "custom-message")
 	}
-	if customMessage.NodeID != w.ClientID {
-		t.Fatalf("received custome message node_id mismatch. got:%v want:%v", customMessage.NodeID, w.ClientID)
+	if customMessage.NodeID != w.ClientID() {
+		t.Fatalf("received custome message node_id mismatch. got:%v want:%v", customMessage.NodeID, w.ClientID())
 	}
 	if msg != "hello" {
 		t.Fatalf("received custome message mismatch. got:%v want:%v", msg, "hello")
@@ -145,7 +145,7 @@ func TestWorker_RegisterMessage_MultipleReceivers(t *testing.T) {
 	_ = master.Send(launce.SendMessage{
 		Type:   "custom-message",
 		Data:   "hello",
-		NodeID: w.ClientID,
+		NodeID: w.ClientID(),
 	})
 
 	msg1 := <-ch
@@ -191,12 +191,12 @@ func TestWorker_RegisterMessage_MultipleMessages(t *testing.T) {
 	_ = master.Send(launce.SendMessage{
 		Type:   "custom-message1",
 		Data:   "foo",
-		NodeID: w.ClientID,
+		NodeID: w.ClientID(),
 	})
 	_ = master.Send(launce.SendMessage{
 		Type:   "custom-message2",
 		Data:   "bar",
-		NodeID: w.ClientID,
+		NodeID: w.ClientID(),
 	})
 
 	msg1 := <-ch
@@ -233,7 +233,7 @@ func TestWorker_RegisterUser(t *testing.T) {
 
 	_ = master.SendSpawn(map[string]int64{
 		"test-user": 3,
-	}, w.ClientID)
+	}, w.ClientID())
 
 	uc.WaitStart(3)
 
@@ -243,7 +243,7 @@ func TestWorker_RegisterUser(t *testing.T) {
 
 	_ = master.SendSpawn(map[string]int64{
 		"test-user": 5,
-	}, w.ClientID)
+	}, w.ClientID())
 
 	uc.WaitStart(5)
 
@@ -253,7 +253,7 @@ func TestWorker_RegisterUser(t *testing.T) {
 
 	_ = master.SendSpawn(map[string]int64{
 		"test-user": 1,
-	}, w.ClientID)
+	}, w.ClientID())
 
 	uc.WaitStop(4)
 
@@ -300,7 +300,7 @@ func TestWorker_SpawnMessage(t *testing.T) {
 
 	_ = master.SendSpawn(map[string]int64{
 		"test-user": 3,
-	}, w.ClientID)
+	}, w.ClientID())
 
 	msg = <-masterCh
 	if msg.Type != launce.MessageSpawning {
@@ -317,7 +317,7 @@ func TestWorker_SpawnMessage(t *testing.T) {
 	_ = master.Send(launce.SendMessage{
 		Type:   launce.MessageStop,
 		Data:   nil,
-		NodeID: w.ClientID,
+		NodeID: w.ClientID(),
 	})
 
 	msg = <-masterCh
@@ -358,7 +358,7 @@ func TestWorker_QuitMessage(t *testing.T) {
 	_ = master.Send(launce.SendMessage{
 		Type:   launce.MessageQuit,
 		Data:   nil,
-		NodeID: w.ClientID,
+		NodeID: w.ClientID(),
 	})
 
 	if msg := <-masterCh; msg.Type != launce.MessageStats {
@@ -380,14 +380,15 @@ func setupWorker(t *testing.T) (*launce.Worker, *masterTransport) {
 		t.Fatal(err)
 	}
 
-	w, err := launce.NewWorker(wt)
+	w, err := launce.NewWorker(
+		wt,
+		launce.WithHeartbeatInterval(0),
+		launce.WithStatsReportInterval(0),
+		launce.WithMetricsMonitorInterval(0),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	w.HeartbeatInterval = 0
-	w.StatsReportInterval = 0
-	w.MetricsMonitorInterval = 0
 
 	return w, &masterTransport{transport: mt}
 }
