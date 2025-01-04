@@ -30,4 +30,5 @@ type Runner interface {
 	SendMessage(typ string, data any) error
 
 	ReportException(err error)
+	CatchExceptions() bool
 }

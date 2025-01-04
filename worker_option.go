@@ -36,6 +36,14 @@ func WithClientID(clientID string) WorkerOption {
 	}
 }
 
+// WithCatchExceptions sets whether to catch exceptions in user scenario.
+// default is true.
+func WithCatchExceptions(catch bool) WorkerOption {
+	return func(w *Worker) {
+		w.catchExceptions = catch
+	}
+}
+
 // WithHeartbeatInterval sets the interval at which the worker sends a heartbeat message to the master.
 func WithHeartbeatInterval(heartbeatInterval time.Duration) WorkerOption {
 	return func(w *Worker) {
