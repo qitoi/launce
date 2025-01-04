@@ -9,6 +9,7 @@
 ### Changed
 
 - Workerのオプション指定をFunctional Optionsに変更
+- ParsedOptionsにLocustで追加されたオプションを追加
 
 ### Fixed
 

@@ -38,18 +38,21 @@ type ParsedOptions struct {
 	ConfigUsers  *[]string `msgpack:"config_users"`  // --config-users
 
 	// Web UI Options
-	WebHost     string  `msgpack:"web_host"`     // --web-host
-	WebPort     int64   `msgpack:"web_port"`     // --web-port
-	Headless    bool    `msgpack:"headless"`     // --headless
-	Autostart   bool    `msgpack:"autostart"`    // --autostart
-	Autoquit    int64   `msgpack:"autoquit"`     // --autoquit
-	Headful     bool    `msgpack:"headful"`      // --headful
-	WebAuth     *string `msgpack:"web_auth"`     // --web-auth
-	WebLogin    bool    `msgpack:"web_login"`    // --web-login
-	TLSCert     string  `msgpack:"tls_cert"`     // --tls-key
-	TLSKey      string  `msgpack:"tls_key"`      // --tls-cert
-	ClassPicker bool    `msgpack:"class_picker"` // --class-picker
-	LegacyUI    bool    `msgpack:"legacy_ui"`    // --legacy-ui
+	WebHost            string  `msgpack:"web_host"`              // --web-host
+	WebHostDisplayName string  `msgpack:"web_host_display_name"` // --web-host-display-name
+	WebPort            int64   `msgpack:"web_port"`              // --web-port
+	Headless           bool    `msgpack:"headless"`              // --headless
+	Autostart          bool    `msgpack:"autostart"`             // --autostart
+	Autoquit           int64   `msgpack:"autoquit"`              // --autoquit
+	Headful            bool    `msgpack:"headful"`               // --headful
+	WebAuth            *string `msgpack:"web_auth"`              // --web-auth
+	WebLogin           bool    `msgpack:"web_login"`             // --web-login
+	TLSCert            string  `msgpack:"tls_cert"`              // --tls-key
+	TLSKey             string  `msgpack:"tls_key"`               // --tls-cert
+	ClassPicker        bool    `msgpack:"class_picker"`          // --class-picker
+	BuildPath          string  `msgpack:"build_path"`            // --build-path
+	LegacyUI           bool    `msgpack:"legacy_ui"`             // --legacy-ui
+	WebBasePath        string  `msgpack:"web_base_path"`         // --web-base-path
 
 	// Master Options
 	Master               bool   `msgpack:"master"`                  // --master
