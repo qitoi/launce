@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## Added
+
+- ユーザーシナリオで発生したエラーをキャッチするかどうかを指定するオプションを追加
+
 ### Changed
 
 - Workerのオプション指定をFunctional Optionsに変更

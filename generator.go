@@ -103,6 +103,7 @@ func (l *LoadGenerator) RegisterUser(r Runner, name string, f func() User) {
 		user := f()
 		user.Init(user, r, rep)
 		if err := processUser(ctx, user); err != nil {
+			// ユーザー処理がエラーを返した場合はマスターに送信
 			if !errors.Is(err, context.Canceled) {
 				r.ReportException(err)
 			}

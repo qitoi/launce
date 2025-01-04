@@ -92,6 +92,8 @@ type Worker struct {
 	// statsReportInterval is the interval at which the worker sends statistics to the master.
 	statsReportInterval time.Duration
 
+	catchExceptions bool
+
 	loadGenerator *LoadGenerator
 	index         int64
 	state         WorkerState
@@ -132,6 +134,7 @@ func NewWorker(transport Transport, options ...WorkerOption) (*Worker, error) {
 		metricsMonitorInterval: defaultMetricsMonitorInterval,
 		masterHeartbeatTimeout: defaultMasterHeartbeatTimeout,
 		statsReportInterval:    defaultStatsReportInterval,
+		catchExceptions:        true,
 
 		loadGenerator: NewLoadGenerator(),
 		index:         -1,
@@ -318,6 +321,10 @@ func (w *Worker) ReportException(err error) {
 		Msg:       err.Error(),
 		Traceback: trace,
 	})
+}
+
+func (w *Worker) CatchExceptions() bool {
+	return w.catchExceptions
 }
 
 // RegisterMessage registers custom message handler.

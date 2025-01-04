@@ -123,9 +123,16 @@ func (b *BaseImpl) Run(ctx context.Context, user launce.User, s Scheduler) error
 			return RescheduleTaskImmediately
 
 		default:
-			// any other error is reported to master, and continue next task
 			if user != nil {
-				user.Runner().ReportException(err)
+				if r := user.Runner(); r != nil {
+					// エラーのキャッチが指定されていない場合はエラーを返して終了
+					if !r.CatchExceptions() {
+						return err
+					}
+
+					// エラーをキャッチする場合はエラーをマスターに送信して継続
+					r.ReportException(err)
+				}
 			}
 		}
 

@@ -122,6 +122,12 @@ func processUser(ctx context.Context, user User) error {
 			}
 			// unexpected error
 			if r := user.Runner(); r != nil {
+				// エラーのキャッチが指定されていない場合はエラーを返して終了
+				if !r.CatchExceptions() {
+					return err
+				}
+
+				// エラーをキャッチする場合はエラーをマスターに送信して継続
 				r.ReportException(err)
 			}
 		}
