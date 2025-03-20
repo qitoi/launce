@@ -18,8 +18,8 @@ package launce
 
 const (
 	// Version is the version of launce.
-	Version = "1.2.0"
+	Version = "1.3.0"
 
 	// LocustVersion is the version of locust that launce is compatible with.
-	LocustVersion = "2.32.5"
+	LocustVersion = "2.33.0"
 )
