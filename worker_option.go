@@ -18,6 +18,8 @@ package launce
 
 import (
 	"time"
+
+	"github.com/qitoi/launce/spawner"
 )
 
 type WorkerOption func(w *Worker)
@@ -41,6 +43,14 @@ func WithClientID(clientID string) WorkerOption {
 func WithCatchExceptions(catch bool) WorkerOption {
 	return func(w *Worker) {
 		w.catchExceptions = catch
+	}
+}
+
+// WithRestartMode sets the mode of spawning users.
+// default is spawner.RestartNever.
+func WithRestartMode(mode spawner.RestartMode) WorkerOption {
+	return func(w *Worker) {
+		w.loadGenerator.RestartMode = mode
 	}
 }
 
