@@ -47,8 +47,8 @@ type ParsedOptions struct {
 	Headful            bool    `msgpack:"headful"`               // --headful
 	WebAuth            *string `msgpack:"web_auth"`              // --web-auth
 	WebLogin           bool    `msgpack:"web_login"`             // --web-login
-	TLSCert            string  `msgpack:"tls_cert"`              // --tls-key
-	TLSKey             string  `msgpack:"tls_key"`               // --tls-cert
+	TLSCert            string  `msgpack:"tls_cert"`              // --tls-cert
+	TLSKey             string  `msgpack:"tls_key"`               // --tls-key
 	ClassPicker        bool    `msgpack:"class_picker"`          // --class-picker
 	BuildPath          string  `msgpack:"build_path"`            // --build-path
 	LegacyUI           bool    `msgpack:"legacy_ui"`             // --legacy-ui
