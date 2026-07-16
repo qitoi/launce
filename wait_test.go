@@ -68,7 +68,7 @@ func TestBetween(t *testing.T) {
 		t.Run(fmt.Sprintf("case #%d", n+1), func(t *testing.T) {
 			for i := 0; i < 1000; i++ {
 				actual := Between(testcase.Min, testcase.Max)()
-				if actual < testcase.Min && testcase.Max < actual {
+				if actual < testcase.Min || testcase.Max < actual {
 					t.Fatalf("invalid duration got:%v, min:%v, max:%v", actual, testcase.Min, testcase.Max)
 				}
 			}
