@@ -31,6 +31,11 @@ type WaitTimeFunc func() time.Duration
 // Between returns a WaitTimeFunc that returns a random wait time between min and max.
 func Between(min, max time.Duration) WaitTimeFunc {
 	return func() time.Duration {
+		if min == max {
+			return min
+		} else if min > max {
+			min, max = max, min
+		}
 		return time.Duration(rand.Int63n(max.Nanoseconds()-min.Nanoseconds()) + min.Nanoseconds())
 	}
 }
