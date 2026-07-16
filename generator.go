@@ -61,7 +61,7 @@ type LoadGenerator struct {
 	testStopHandlers     []func(ctx context.Context)
 
 	// cancelStart is a function to cancel the OnTestStart handlers.
-	cancelStart atomic.Value
+	cancelStart atomic.Pointer[context.CancelFunc]
 
 	started atomic.Bool
 
@@ -134,7 +134,12 @@ func (l *LoadGenerator) Start() error {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	l.cancelStart.Store(cancel)
+	l.cancelStart.Store(&cancel)
+	defer func() {
+		if cancel := l.cancelStart.Swap(nil); cancel != nil {
+			(*cancel)()
+		}
+	}()
 
 	l.aggMutex.Lock()
 	l.aggUserCounter = 0
@@ -164,10 +169,8 @@ func (l *LoadGenerator) Stop() {
 		return
 	}
 
-	if f := l.cancelStart.Load(); f != nil {
-		if cancel, ok := f.(context.CancelFunc); ok {
-			cancel()
-		}
+	if cancel := l.cancelStart.Load(); cancel != nil {
+		(*cancel)()
 	}
 
 	ctx := context.Background()
