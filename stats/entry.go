@@ -86,9 +86,7 @@ func (e *Entry) Add(now time.Time, responseTime time.Duration, contentLength int
 		e.NumNoneRequests += 1
 	} else {
 		e.TotalResponseTime += responseTime
-		if e.MinResponseTime < 0 {
-			e.MinResponseTime = responseTime
-		} else if e.MinResponseTime < 0 || e.MinResponseTime > responseTime {
+		if e.MinResponseTime < 0 || e.MinResponseTime > responseTime {
 			e.MinResponseTime = responseTime
 		}
 		e.MaxResponseTime = max(e.MaxResponseTime, responseTime)
