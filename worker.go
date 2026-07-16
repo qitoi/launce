@@ -521,6 +521,7 @@ func (w *Worker) startSpawnProcess(ctx context.Context, wg *sync.WaitGroup) {
 				if state := atomic.LoadInt64(&w.state); state != WorkerStateRunning && state != WorkerStateSpawning {
 					// Runner の Start 中に停止された場合は spawn を中断する
 					if err := w.loadGenerator.Start(); err != nil {
+						w.ReportException(err)
 						continue
 					}
 				}

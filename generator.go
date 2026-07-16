@@ -146,6 +146,7 @@ func (l *LoadGenerator) Start() error {
 
 	for _, f := range l.testStartHandlers {
 		if err := f(ctx); err != nil {
+			l.started.Store(false)
 			return err
 		}
 	}

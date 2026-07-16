@@ -63,6 +63,34 @@ func TestLoadGenerator_OnTestStart_Error(t *testing.T) {
 	}
 }
 
+func TestLoadGenerator_OnTestStart_ErrorRetry(t *testing.T) {
+	r := launce.NewLoadGenerator()
+
+	expected := errors.New("error")
+	var callCount int
+
+	r.OnTestStart(func(ctx context.Context) error {
+		callCount++
+		if callCount == 1 {
+			return expected
+		}
+		return nil
+	})
+
+	if err := r.Start(); !errors.Is(err, expected) {
+		t.Fatalf("1回目: unexpected result got:%v want:%v", err, expected)
+	}
+
+	if err := r.Start(); err != nil {
+		t.Fatalf("2回目: unexpected error: %v", err)
+	}
+	r.Stop()
+
+	if callCount != 2 {
+		t.Fatalf("OnTestStart の呼び出し回数 got:%d want:2", callCount)
+	}
+}
+
 func TestLoadGenerator_OnTestStop(t *testing.T) {
 	r := launce.NewLoadGenerator()
 
