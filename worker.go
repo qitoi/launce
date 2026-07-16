@@ -529,12 +529,6 @@ func (w *Worker) startSpawnProcess(ctx context.Context, wg *sync.WaitGroup) {
 				atomic.StoreInt64(&w.state, WorkerStateSpawning)
 				_ = w.SendMessage(messageSpawning, nil)
 
-				users := w.loadGenerator.Users()
-				var total int64
-				for _, u := range users {
-					total += u
-				}
-
 				payload := &spawningCompletePayload{
 					UserClassesCount: make(map[string]int64),
 					UserCount:        0,
