@@ -73,7 +73,7 @@ type LoadGenerator struct {
 // NewLoadGenerator returns a new LoadGenerator.
 func NewLoadGenerator() *LoadGenerator {
 	return &LoadGenerator{
-		RestartMode:           spawner.RestartNever,
+		RestartMode:           spawner.RestartLocustCompatible,
 		StatsNotifyInterval:   defaultStatsNotifyInterval,
 		StatsAggregationUsers: defaultStatsAggregationUsers,
 

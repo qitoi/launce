@@ -33,14 +33,15 @@ type threadList struct {
 	currentID uint64
 }
 
-func (tl *threadList) Cap(n int) {
+func (tl *threadList) Cap(n int) int {
 	tl.mu.Lock()
 	defer tl.mu.Unlock()
 	tl.count = n
-	tl.pop(len(tl.threads) - n)
+	canceled := tl.pop(len(tl.threads) - n)
 	old := tl.threads
 	tl.threads = make([]thread, len(old), n)
 	copy(tl.threads, old)
+	return canceled
 }
 
 func (tl *threadList) Add(cancel func()) uint64 {
@@ -55,10 +56,10 @@ func (tl *threadList) Add(cancel func()) uint64 {
 	return tl.currentID
 }
 
-func (tl *threadList) Pop(n int) {
+func (tl *threadList) Pop(n int) int {
 	tl.mu.Lock()
 	defer tl.mu.Unlock()
-	tl.pop(n)
+	return tl.pop(n)
 }
 
 func (tl *threadList) Delete(id uint64) {
@@ -79,14 +80,15 @@ func (tl *threadList) Clear() {
 	tl.pop(len(tl.threads))
 }
 
-func (tl *threadList) pop(n int) {
+func (tl *threadList) pop(n int) int {
 	n = min(n, len(tl.threads))
 	if n <= 0 {
-		return
+		return 0
 	}
 	deleted := tl.threads[:n]
 	tl.threads = tl.threads[n:]
 	for _, u := range deleted {
 		u.cancel()
 	}
+	return n
 }

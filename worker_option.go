@@ -47,7 +47,7 @@ func WithCatchExceptions(catch bool) WorkerOption {
 }
 
 // WithRestartMode sets the mode of spawning users.
-// default is spawner.RestartNever.
+// default is spawner.RestartLocustCompatible.
 func WithRestartMode(mode spawner.RestartMode) WorkerOption {
 	return func(w *Worker) {
 		w.loadGenerator.RestartMode = mode
