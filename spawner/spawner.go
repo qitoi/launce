@@ -30,8 +30,14 @@ type RestartMode int
 type SpawnFunc func(ctx context.Context)
 
 const (
-	// RestartNever is a mode where goroutines are not restarted once they finish.
-	RestartNever RestartMode = iota
+	// RestartLocustCompatible backfills a finished goroutine's slot on the next Cap call,
+	// matching the original Locust worker; goroutines finishing early (e.g. a failing
+	// OnStart) can make spawns per Cap call snowball. Use RestartNever to avoid that.
+	RestartLocustCompatible RestartMode = iota
+	// RestartNever never backfills a slot once a goroutine finishes on its own, unlike
+	// RestartLocustCompatible. A slot freed by Cap reducing the capacity is still given
+	// back, so a later Cap increase can spawn up to the new capacity.
+	RestartNever
 	// RestartAlways is a mode that ensures goroutines are automatically restarted to maintain the capacity.
 	RestartAlways
 )
@@ -42,6 +48,8 @@ type Spawner struct {
 	spawnFunc SpawnFunc
 	count     int64
 	spawned   int64
+
+	totalSpawned int64
 
 	spawnChMutex sync.Mutex
 	spawnCh      chan struct{}
@@ -72,10 +80,16 @@ func (s *Spawner) Cap(count int) {
 
 	if s.isRunning() {
 		// spawnWorker が動いている場合は一度止めて別の spawnWorkerを動かす
-		s.spawnWorker(count)
+		s.spawnWorker(count, false)
 	} else {
 		// spawnWorker が動いていない場合はユーザーリストの上限のみ変更
-		s.threads.Cap(count)
+		s.reclaim(s.threads.Cap(count))
+	}
+}
+
+func (s *Spawner) reclaim(canceled int) {
+	if canceled > 0 {
+		atomic.AddInt64(&s.totalSpawned, -int64(canceled))
 	}
 }
 
@@ -86,7 +100,7 @@ func (s *Spawner) Count() int64 {
 
 // Start starts the goroutine manager.
 func (s *Spawner) Start() {
-	s.spawnWorker(int(atomic.LoadInt64(&s.count)))
+	s.spawnWorker(int(atomic.LoadInt64(&s.count)), true)
 }
 
 // Stop stops the goroutine manager.
@@ -116,7 +130,7 @@ func (s *Spawner) isRunning() bool {
 	return s.stop != nil
 }
 
-func (s *Spawner) spawnWorker(count int) {
+func (s *Spawner) spawnWorker(count int, reset bool) {
 	spawnCh := make(chan struct{}, count)
 	stopCh := make(chan struct{})
 	stopWaitCh := make(chan struct{})
@@ -124,6 +138,11 @@ func (s *Spawner) spawnWorker(count int) {
 	s.stopMutex.Lock()
 	if s.stop != nil {
 		s.stop()
+	}
+	if reset {
+		// 前回の spawn goroutine が完全に停止したのを確認したあとで
+		// 累計 spawn 数をリセットする
+		atomic.StoreInt64(&s.totalSpawned, 0)
 	}
 	s.stop = func() {
 		// spawn用の goroutine に停止の指令を出して、 goroutine が終了するのを待つ
@@ -139,16 +158,21 @@ func (s *Spawner) spawnWorker(count int) {
 
 	// 旧 spawnCh から新 spawnCh にユーザーのロックを移し、溢れた場合はユーザーを捨てる
 	s.migrateSpawnCh(oldSpawnCh, spawnCh)
-	s.threads.Cap(count)
+	s.reclaim(s.threads.Cap(count))
 
-	if s.mode == RestartNever {
-		go s.spawnWorkerOnce(spawnCh, stopCh, stopWaitCh)
-	} else if s.mode == RestartAlways {
+	switch s.mode {
+	case RestartLocustCompatible:
+		go s.spawnWorkerLocustCompatible(spawnCh, stopCh, stopWaitCh)
+	case RestartNever:
+		// 累計 spawn 数が count に満たない分だけ新規に spawn する
+		budget := max(0, count-int(atomic.LoadInt64(&s.totalSpawned)))
+		go s.spawnWorkerOnce(spawnCh, stopCh, stopWaitCh, budget)
+	case RestartAlways:
 		go s.spawnWorkerPersistent(spawnCh, stopCh, stopWaitCh)
 	}
 }
 
-func (s *Spawner) spawnWorkerOnce(spawnCh, stopCh, stopWaitCh chan struct{}) {
+func (s *Spawner) spawnWorkerLocustCompatible(spawnCh, stopCh, stopWaitCh chan struct{}) {
 	defer close(stopWaitCh)
 	defer close(spawnCh)
 
@@ -163,6 +187,22 @@ func (s *Spawner) spawnWorkerOnce(spawnCh, stopCh, stopWaitCh chan struct{}) {
 
 		default:
 			// 指定数を起動したので終了
+			return
+		}
+	}
+}
+
+func (s *Spawner) spawnWorkerOnce(spawnCh, stopCh, stopWaitCh chan struct{}, budget int) {
+	defer close(stopWaitCh)
+	defer close(spawnCh)
+
+	for n := 0; n < budget; n++ {
+		select {
+		case spawnCh <- struct{}{}:
+			// budget の範囲内でのみユーザーを新規に spawn させる
+			s.spawn()
+
+		case <-stopCh:
 			return
 		}
 	}
@@ -185,6 +225,8 @@ func (s *Spawner) spawnWorkerPersistent(spawnCh, stopCh, stopWaitCh chan struct{
 }
 
 func (s *Spawner) spawn() {
+	atomic.AddInt64(&s.totalSpawned, 1)
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	s.threadMutex.Lock()
@@ -217,7 +259,7 @@ func (s *Spawner) migrateSpawnCh(src, dst chan struct{}) {
 	if cap(dst) == 0 {
 		// cap が 0 に更新された場合は動いているユーザーを全て捨てる
 		for v := range src {
-			s.threads.Pop(1)
+			s.reclaim(s.threads.Pop(1))
 			dst <- v
 		}
 		return
@@ -241,7 +283,7 @@ loop:
 			// 移行先の channel に spawn のロックを移せられれば次のロックを取り出す
 		default:
 			// 移行先の channel が一杯の場合はユーザーを1つ捨ててからロックを移す
-			s.threads.Pop(1)
+			s.reclaim(s.threads.Pop(1))
 			dst <- v
 		}
 	}
