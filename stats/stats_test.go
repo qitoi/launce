@@ -414,20 +414,31 @@ func TestStats_Entries_ResponseTimes(t *testing.T) {
 func TestStats_Errors(t *testing.T) {
 	s := getStats()
 
-	expected := stats.Errors{
-		{"GET", "/test1", "error"}:  1,
-		{"GET", "/error", "error"}:  2,
-		{"GET", "/error", "error2"}: 1,
+	expected := map[stats.ErrorKey]stats.ErrorOccurrence{
+		{"GET", "/test1", "error"}: {
+			Count:     1,
+			FirstSeen: parseTime("2024-01-01T00:00:01.300Z").UnixNano(),
+			LastSeen:  parseTime("2024-01-01T00:00:01.300Z").UnixNano(),
+		},
+		{"GET", "/error", "error"}: {
+			Count:     2,
+			FirstSeen: parseTime("2024-01-01T00:00:01.800Z").UnixNano(),
+			LastSeen:  parseTime("2024-01-01T00:00:02.500Z").UnixNano(),
+		},
+		{"GET", "/error", "error2"}: {
+			Count:     1,
+			FirstSeen: parseTime("2024-01-01T00:00:01.900Z").UnixNano(),
+			LastSeen:  parseTime("2024-01-01T00:00:01.900Z").UnixNano(),
+		},
 	}
-	if !reflect.DeepEqual(s.Errors, expected) {
+	if !reflect.DeepEqual(map[stats.ErrorKey]stats.ErrorOccurrence(s.Errors), expected) {
 		t.Fatalf("invalid value. got:%v, want:%v", s.Errors, expected)
 	}
 
 	s.Flush()
 
-	expected = stats.Errors{}
-	if !reflect.DeepEqual(s.Errors, expected) {
-		t.Fatalf("invalid value. got:%v, want:%v", s.Errors, expected)
+	if len(s.Errors) != 0 {
+		t.Fatalf("invalid value. got:%v, want:%v", s.Errors, stats.Errors{})
 	}
 }
 

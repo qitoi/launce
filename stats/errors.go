@@ -19,27 +19,51 @@ package stats
 import (
 	"crypto/sha256"
 	"fmt"
+	"time"
 )
 
 // Errors is an occurrence count of errors.
-type Errors map[ErrorKey]int64
+type Errors map[ErrorKey]ErrorOccurrence
+
+// ErrorOccurrence contains the occurrence count and first/last seen time of an error.
+type ErrorOccurrence struct {
+	Count     int64
+	FirstSeen int64 // [ns]
+	LastSeen  int64 // [ns]
+}
 
 // Add adds an error to the occurrence count.
-func (e *Errors) Add(method, name string, err error) {
+func (e *Errors) Add(now time.Time, method, name string, err error) {
 	key := ErrorKey{method, name, err.Error()}
-	if _, ok := (*e)[key]; !ok {
-		(*e)[key] = 0
+	// キーが無い場合は ErrorOccurrence のゼロ値が返るので、事前の存在チェックは不要
+	o := (*e)[key]
+
+	nowNano := now.UnixNano()
+	if o.FirstSeen == 0 || o.FirstSeen > nowNano {
+		o.FirstSeen = nowNano
 	}
-	(*e)[key] += 1
+	if o.LastSeen < nowNano {
+		o.LastSeen = nowNano
+	}
+	o.Count += 1
+
+	(*e)[key] = o
 }
 
 // Merge merges the occurrence count of errors.
 func (e *Errors) Merge(src Errors) {
 	for k, v := range src {
-		if _, ok := (*e)[k]; !ok {
-			(*e)[k] = 0
+		o := (*e)[k]
+
+		if o.FirstSeen == 0 || (v.FirstSeen != 0 && o.FirstSeen > v.FirstSeen) {
+			o.FirstSeen = v.FirstSeen
 		}
-		(*e)[k] += v
+		if o.LastSeen < v.LastSeen {
+			o.LastSeen = v.LastSeen
+		}
+		o.Count += v.Count
+
+		(*e)[k] = o
 	}
 }
 

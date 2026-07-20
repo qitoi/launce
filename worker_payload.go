@@ -75,10 +75,12 @@ type statsPayloadEntry struct {
 }
 
 type statsPayloadError struct {
-	Name        string `msgpack:"name"`
-	Method      string `msgpack:"method"`
-	Error       string `msgpack:"error"`
-	Occurrences int64  `msgpack:"occurrences"`
+	Name        string  `msgpack:"name"`
+	Method      string  `msgpack:"method"`
+	Error       string  `msgpack:"error"`
+	Occurrences int64   `msgpack:"occurrences"`
+	FirstSeen   float64 `msgpack:"first_seen"`
+	LastSeen    float64 `msgpack:"last_seen"`
 }
 
 type statsPayload struct {

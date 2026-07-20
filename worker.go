@@ -721,12 +721,14 @@ func convertStatisticsEntry(name, method string, entry *stats.Entry) *statsPaylo
 	}
 }
 
-func convertStatisticsError(key stats.ErrorKey, occurrence int64) *statsPayloadError {
+func convertStatisticsError(key stats.ErrorKey, occurrence stats.ErrorOccurrence) *statsPayloadError {
 	return &statsPayloadError{
 		Name:        key.Name,
 		Method:      key.Method,
 		Error:       key.Error,
-		Occurrences: occurrence,
+		Occurrences: occurrence.Count,
+		FirstSeen:   float64(occurrence.FirstSeen) / 1e9, // [s]
+		LastSeen:    float64(occurrence.LastSeen) / 1e9,  // [s]
 	}
 }
 

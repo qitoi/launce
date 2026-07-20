@@ -66,7 +66,7 @@ func (s *Stats) Add(now time.Time, requestType, name string, responseTime time.D
 	s.Entries[key].Add(now, responseTime, contentLength, err)
 
 	if err != nil {
-		s.Errors.Add(key.Method, key.Name, err)
+		s.Errors.Add(now, key.Method, key.Name, err)
 	}
 }
 
