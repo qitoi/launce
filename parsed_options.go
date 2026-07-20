@@ -82,6 +82,7 @@ type ParsedOptions struct {
 	ResetStats          bool    `msgpack:"reset_stats"`           // --reset-stats
 	HtmlFile            *string `msgpack:"html_file"`             // --html
 	Json                bool    `msgpack:"json"`                  // --json
+	JsonFile            *string `msgpack:"json_file"`             // --json-file
 
 	// Log Options
 	SkipLogSetup bool    `msgpack:"skip_log_setup"` // --skip-log-setup
@@ -89,11 +90,13 @@ type ParsedOptions struct {
 	Logfile      *string `msgpack:"logfile"`        // --logfile
 
 	// Other Options
-	ShowTaskRatio     bool  `msgpack:"show_task_ratio"`      // --show-task-ratio
-	ShowTaskRatioJson bool  `msgpack:"show_task_ratio_json"` // --show-task-ratio-json
-	ExitCodeOnError   int64 `msgpack:"exit_code_on_error"`   // --exit-code-on-error
-	StopTimeout       int64 `msgpack:"stop_timeout"`         // --stop-timeout
-	EqualWeights      bool  `msgpack:"equal_weights"`        // --equal-weights
+	ShowTaskRatio     bool    `msgpack:"show_task_ratio"`      // --show-task-ratio
+	ShowTaskRatioJson bool    `msgpack:"show_task_ratio_json"` // --show-task-ratio-json
+	ExitCodeOnError   int64   `msgpack:"exit_code_on_error"`   // --exit-code-on-error
+	StopTimeout       int64   `msgpack:"stop_timeout"`         // --stop-timeout
+	EqualWeights      bool    `msgpack:"equal_weights"`        // --equal-weights
+	Profile           *string `msgpack:"profile"`              // --profile
+	Otel              bool    `msgpack:"otel"`                 // --otel
 
 	// User Classes Options
 	UserClasses []string `msgpack:"user_classes"` // <UserClass1 UserClass2>
