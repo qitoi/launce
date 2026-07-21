@@ -114,6 +114,7 @@ type Worker struct {
 
 	host          atomic.Value
 	parsedOptions atomic.Pointer[ParsedOptions]
+	stopTimeout   atomic.Int64
 
 	messageHandlers  map[string][]MessageHandler
 	connectHandlers  handlers
@@ -305,6 +306,12 @@ func (w *Worker) Host() string {
 	return ""
 }
 
+// StopTimeout returns the grace period given to a user to finish its current
+// task before its context is actually canceled when asked to stop.
+func (w *Worker) StopTimeout() time.Duration {
+	return time.Duration(w.stopTimeout.Load())
+}
+
 func (w *Worker) Tags() (tags, excludeTags *[]string) {
 	if p := w.parsedOptions.Load(); p != nil {
 		return p.Tags, p.ExcludeTags
@@ -454,6 +461,7 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 
 				w.host.Store(payload.Host)
 				w.parsedOptions.Store(&payload.ParsedOptions)
+				w.stopTimeout.Store(int64(payload.StopTimeout * float64(time.Second)))
 
 				w.spawnCh <- payload.UserClassesCount
 
