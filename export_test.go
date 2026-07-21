@@ -47,6 +47,7 @@ const (
 	MessageSpawningComplete = messageSpawningComplete
 	MessageStats            = messageStats
 	MessageException        = messageException
+	MessageLogs             = messageLogs
 )
 
 type (
@@ -58,4 +59,5 @@ type (
 	StatsPayload            = statsPayload
 	ExceptionPayload        = exceptionPayload
 	SpawningCompletePayload = spawningCompletePayload
+	LogsPayload             = logsPayload
 )

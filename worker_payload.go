@@ -37,6 +37,7 @@ const (
 	messageSpawningComplete = "spawning_complete"
 	messageStats            = "stats"
 	messageException        = "exception"
+	messageLogs             = "logs"
 )
 
 type ackPayload struct {
@@ -99,4 +100,9 @@ type exceptionPayload struct {
 type spawningCompletePayload struct {
 	UserClassesCount map[string]int64 `msgpack:"user_classes_count"`
 	UserCount        int64            `msgpack:"user_count"`
+}
+
+type logsPayload struct {
+	WorkerID string   `msgpack:"worker_id"`
+	Logs     []string `msgpack:"logs"`
 }

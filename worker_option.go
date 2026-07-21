@@ -95,3 +95,19 @@ func WithStatsAggregationUsers(statsAggregationUsers int) WorkerOption {
 		w.loadGenerator.StatsAggregationUsers = statsAggregationUsers
 	}
 }
+
+// WithLogCapture sets the LogCapture to report recent log lines to the master.
+// If not set, log reporting is disabled.
+func WithLogCapture(capture *LogCapture) WorkerOption {
+	return func(w *Worker) {
+		w.logCapture = capture
+	}
+}
+
+// WithLogReportInterval sets the interval at which the worker sends captured log lines to the master.
+// default is 10 seconds.
+func WithLogReportInterval(reportInterval time.Duration) WorkerOption {
+	return func(w *Worker) {
+		w.logReportInterval = reportInterval
+	}
+}

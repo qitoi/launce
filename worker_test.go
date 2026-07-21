@@ -19,9 +19,12 @@ package launce_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"reflect"
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/qitoi/launce"
 )
@@ -372,7 +375,50 @@ func TestWorker_QuitMessage(t *testing.T) {
 	wg.Wait()
 }
 
-func setupWorker(t *testing.T) (*launce.Worker, *masterTransport) {
+func TestWorker_LogsMessage(t *testing.T) {
+	var wg sync.WaitGroup
+
+	capture := launce.NewLogCapture(10)
+	w, master := setupWorker(t, launce.WithLogCapture(capture), launce.WithLogReportInterval(10*time.Millisecond))
+	masterCh, waitForReady := startMasterReceiver(&wg, master, launce.MessageClientReady, launce.MessageLogs)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_ = w.Join()
+	}()
+
+	waitForReady()
+
+	if msg := <-masterCh; msg.Type != launce.MessageClientReady {
+		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageClientReady)
+	}
+
+	_, _ = fmt.Fprintln(capture, "hello world")
+
+	msg := <-masterCh
+	if msg.Type != launce.MessageLogs {
+		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageLogs)
+	}
+
+	var payload launce.LogsPayload
+	if err := msg.DecodePayload(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.WorkerID != w.ClientID() {
+		t.Fatalf("unexpected worker id. got:%v want:%v", payload.WorkerID, w.ClientID())
+	}
+	want := []string{"hello world"}
+	if !reflect.DeepEqual(payload.Logs, want) {
+		t.Fatalf("unexpected logs. got:%v want:%v", payload.Logs, want)
+	}
+
+	w.Quit()
+
+	wg.Wait()
+}
+
+func setupWorker(t *testing.T, extra ...launce.WorkerOption) (*launce.Worker, *masterTransport) {
 	t.Helper()
 
 	mt, wt, err := makeTransportSet()
@@ -380,12 +426,14 @@ func setupWorker(t *testing.T) (*launce.Worker, *masterTransport) {
 		t.Fatal(err)
 	}
 
-	w, err := launce.NewWorker(
-		wt,
+	options := []launce.WorkerOption{
 		launce.WithHeartbeatInterval(0),
 		launce.WithStatsReportInterval(0),
 		launce.WithMetricsMonitorInterval(0),
-	)
+	}
+	options = append(options, extra...)
+
+	w, err := launce.NewWorker(wt, options...)
 	if err != nil {
 		t.Fatal(err)
 	}

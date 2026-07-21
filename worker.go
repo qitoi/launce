@@ -53,6 +53,7 @@ const (
 	defaultMetricsMonitorInterval = 5 * time.Second
 	defaultMasterHeartbeatTimeout = 60 * time.Second
 	defaultStatsReportInterval    = 3 * time.Second
+	defaultLogReportInterval      = 10 * time.Second
 
 	connectTimeout    = 5 * time.Second
 	connectRetryCount = 60
@@ -91,6 +92,13 @@ type Worker struct {
 
 	// statsReportInterval is the interval at which the worker sends statistics to the master.
 	statsReportInterval time.Duration
+
+	// logReportInterval is the interval at which the worker sends captured log lines to the master.
+	logReportInterval time.Duration
+
+	// logCapture is the buffer of recent log lines to report to the master.
+	// If nil, log reporting is disabled.
+	logCapture *LogCapture
 
 	catchExceptions bool
 
@@ -134,6 +142,7 @@ func NewWorker(transport Transport, options ...WorkerOption) (*Worker, error) {
 		metricsMonitorInterval: defaultMetricsMonitorInterval,
 		masterHeartbeatTimeout: defaultMasterHeartbeatTimeout,
 		statsReportInterval:    defaultStatsReportInterval,
+		logReportInterval:      defaultLogReportInterval,
 		catchExceptions:        true,
 
 		loadGenerator: NewLoadGenerator(),
@@ -198,6 +207,7 @@ func (w *Worker) Join() error {
 	w.startHeartbeatCheckProcess(ctx, &procWg, w.masterHeartbeatTimeout)
 	w.startMetricsMonitorProcess(ctx, &procWg, w.metricsMonitorInterval)
 	w.startStatsProcess(ctx, &procWg, w.statsReportInterval)
+	w.startLogsProcess(ctx, &procWg, w.logReportInterval)
 	w.startSpawnProcess(ctx, &procWg)
 
 	procWg.Wait()
@@ -638,6 +648,45 @@ func (w *Worker) startStatsProcess(ctx context.Context, wg *sync.WaitGroup, inte
 			}
 		}
 	}()
+}
+
+func (w *Worker) startLogsProcess(ctx context.Context, wg *sync.WaitGroup, interval time.Duration) {
+	if interval <= 0 || w.logCapture == nil {
+		return
+	}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		// リングバッファの長さは上限に達すると変化しなくなるため、送信済みかどうかの判定には累計本数 (Total) を使う
+		var lastTotal int64
+
+	loop:
+		for {
+			select {
+			case <-ticker.C:
+				if total := w.logCapture.Total(); total > lastTotal {
+					if err := w.sendLogs(w.logCapture.Lines()); err == nil {
+						lastTotal = total
+					}
+				}
+
+			case <-ctx.Done():
+				break loop
+			}
+		}
+	}()
+}
+
+func (w *Worker) sendLogs(lines []string) error {
+	return w.SendMessage(messageLogs, logsPayload{
+		WorkerID: w.clientID,
+		Logs:     lines,
+	})
 }
 
 func (w *Worker) sendStats() error {

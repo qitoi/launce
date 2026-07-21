@@ -20,6 +20,7 @@ The aim of this library is to write load test scenarios as simply as locustfile.
 | wait_time functions | Yes       |                                                            |
 | custom messages     | Yes       | [_examples/custom-messages](./_examples/custom-messages)   |
 | custom arguments    | Yes       | [_examples/custom-arguments](./_examples/custom-arguments) |
+| worker logs         | Yes       | [_examples/send-log](./_examples/send-log)                 |
 
 
 ## Install
