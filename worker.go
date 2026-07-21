@@ -107,6 +107,7 @@ type Worker struct {
 	state         WorkerState
 	transport     Transport
 	stats         *stats.Stats
+	statsMutex    sync.Mutex
 	spawnCh       chan map[string]int64
 	ackCh         chan struct{}
 	heartbeatCh   chan struct{}
@@ -116,10 +117,16 @@ type Worker struct {
 	parsedOptions atomic.Pointer[ParsedOptions]
 	stopTimeout   atomic.Int64
 
-	messageHandlers  map[string][]MessageHandler
-	connectHandlers  handlers
-	quittingHandlers handlers
-	quitHandlers     handlers
+	// resetStatsCh signals the stats process goroutine to clear w.stats.
+	// Used instead of touching w.stats directly, since it's only ever
+	// accessed from that single goroutine.
+	resetStatsCh chan struct{}
+
+	messageHandlers          map[string][]MessageHandler
+	connectHandlers          handlers
+	quittingHandlers         handlers
+	quitHandlers             handlers
+	spawningCompleteHandlers []func(userCount int64)
 
 	// cancel is the context cancel function of the join process.
 	cancel atomic.Value
@@ -154,6 +161,7 @@ func NewWorker(transport Transport, options ...WorkerOption) (*Worker, error) {
 		spawnCh:       make(chan map[string]int64),
 		ackCh:         make(chan struct{}, 1),
 		heartbeatCh:   make(chan struct{}),
+		resetStatsCh:  make(chan struct{}, 1),
 		procInfo:      procInfo,
 
 		messageHandlers: map[string][]MessageHandler{},
@@ -270,6 +278,12 @@ func (w *Worker) OnQuitting(f func()) {
 // OnQuit registers function to be called when the worker quits.
 func (w *Worker) OnQuit(f func()) {
 	w.quitHandlers.Add(f)
+}
+
+// OnSpawningComplete registers function to be called when the master reports
+// that spawning is complete across the whole cluster.
+func (w *Worker) OnSpawningComplete(f func(userCount int64)) {
+	w.spawningCompleteHandlers = append(w.spawningCompleteHandlers, f)
 }
 
 // OnTestStart registers function to be called when the test starts.
@@ -465,6 +479,24 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 
 				w.spawnCh <- payload.UserClassesCount
 
+			case messageSpawningComplete:
+				// master からのクラスタ全体のspawning完了通知
+				var payload spawningCompletePayload
+				if err := msg.DecodePayload(&payload); err != nil {
+					return
+				}
+
+				if p := w.parsedOptions.Load(); p != nil && p.ResetStats {
+					select {
+					case w.resetStatsCh <- struct{}{}:
+					default:
+					}
+				}
+
+				for _, f := range w.spawningCompleteHandlers {
+					f(payload.UserCount)
+				}
+
 			case messageStop:
 				w.loadGenerator.Stop()
 				w.host.Store("")
@@ -646,7 +678,14 @@ func (w *Worker) startStatsProcess(ctx context.Context, wg *sync.WaitGroup, inte
 		for {
 			select {
 			case st := <-ch:
+				w.statsMutex.Lock()
 				w.stats.Merge(st)
+				w.statsMutex.Unlock()
+
+			case <-w.resetStatsCh:
+				w.statsMutex.Lock()
+				w.stats.Clear()
+				w.statsMutex.Unlock()
 
 			case <-ticker.C:
 				_ = w.sendStats()
@@ -698,7 +737,11 @@ func (w *Worker) sendLogs(lines []string) error {
 }
 
 func (w *Worker) sendStats() error {
-	payload := convertStatisticsPayload(w.stats.Flush())
+	w.statsMutex.Lock()
+	entries, total, errs := w.stats.Flush()
+	w.statsMutex.Unlock()
+
+	payload := convertStatisticsPayload(entries, total, errs)
 	payload.UserClassesCount = w.loadGenerator.Users()
 	for _, count := range payload.UserClassesCount {
 		payload.UserCount += count

@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"reflect"
 	"slices"
 	"sync"
@@ -414,6 +415,96 @@ func TestWorker_LogsMessage(t *testing.T) {
 	}
 
 	w.Quit()
+
+	wg.Wait()
+}
+
+// TestWorker_SpawningCompleteMessage_ResetStats は、master から
+// spawning_complete がブロードキャストされたとき、OnSpawningComplete が
+// 呼ばれ、かつ ParsedOptions.ResetStats が true ならそれまでの統計が
+// 破棄されることを確認する。
+func TestWorker_SpawningCompleteMessage_ResetStats(t *testing.T) {
+	var wg sync.WaitGroup
+
+	w, master := setupWorker(t,
+		launce.WithStatsReportInterval(time.Hour),
+		launce.WithStatsAggregationInterval(5*time.Millisecond),
+	)
+	masterCh, waitForReady := startMasterReceiver(&wg, master,
+		launce.MessageClientReady, launce.MessageSpawning, launce.MessageSpawningComplete, launce.MessageStats)
+
+	var spawningCompleteUserCount int64
+	w.OnSpawningComplete(func(userCount int64) {
+		spawningCompleteUserCount = userCount
+	})
+
+	reported := make(chan struct{})
+	var reportOnce sync.Once
+	u := &user{}
+	u.ProcessFunc = func(ctx context.Context) error {
+		u.Report(http.MethodGet, "/x", 10*time.Millisecond, 0, nil)
+		reportOnce.Do(func() { close(reported) })
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	w.RegisterUser("test-user", func() launce.User { return u })
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_ = w.Join()
+	}()
+
+	waitForReady()
+	if msg := <-masterCh; msg.Type != launce.MessageClientReady {
+		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageClientReady)
+	}
+
+	parsedOptions.ResetStats = true
+	defer func() { parsedOptions = launce.ParsedOptions{} }()
+
+	_ = master.SendSpawn(map[string]int64{"test-user": 1}, w.ClientID())
+	if msg := <-masterCh; msg.Type != launce.MessageSpawning {
+		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageSpawning)
+	}
+	if msg := <-masterCh; msg.Type != launce.MessageSpawningComplete {
+		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageSpawningComplete)
+	}
+
+	<-reported
+	// Aggregator から w.stats へ反映されるのを待つ
+	time.Sleep(50 * time.Millisecond)
+
+	// master -> worker の spawning_complete (クラスタ全体の完了通知)
+	_ = master.Send(launce.SendMessage{
+		Type:   launce.MessageSpawningComplete,
+		Data:   launce.SpawningCompletePayload{UserCount: 1},
+		NodeID: w.ClientID(),
+	})
+
+	time.Sleep(50 * time.Millisecond)
+
+	// quit すると即座に最終的な stats が送られるので、それで内容を確認する
+	_ = master.Send(launce.SendMessage{
+		Type:   launce.MessageQuit,
+		NodeID: w.ClientID(),
+	})
+
+	msg := <-masterCh
+	if msg.Type != launce.MessageStats {
+		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageStats)
+	}
+	var payload launce.StatsPayload
+	if err := msg.DecodePayload(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.StatsTotal.NumRequests != 0 {
+		t.Fatalf("stats should have been reset. got NumRequests:%d want:%d", payload.StatsTotal.NumRequests, 0)
+	}
+
+	if spawningCompleteUserCount != 1 {
+		t.Fatalf("unexpected user count. got:%d want:%d", spawningCompleteUserCount, 1)
+	}
 
 	wg.Wait()
 }
