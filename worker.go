@@ -53,6 +53,7 @@ const (
 	defaultMetricsMonitorInterval = 5 * time.Second
 	defaultMasterHeartbeatTimeout = 60 * time.Second
 	defaultStatsReportInterval    = 3 * time.Second
+	defaultLogReportInterval      = 10 * time.Second
 
 	connectTimeout    = 5 * time.Second
 	connectRetryCount = 60
@@ -92,6 +93,13 @@ type Worker struct {
 	// statsReportInterval is the interval at which the worker sends statistics to the master.
 	statsReportInterval time.Duration
 
+	// logReportInterval is the interval at which the worker sends captured log lines to the master.
+	logReportInterval time.Duration
+
+	// logCapture is the buffer of recent log lines to report to the master.
+	// If nil, log reporting is disabled.
+	logCapture *LogCapture
+
 	catchExceptions bool
 
 	loadGenerator *LoadGenerator
@@ -99,6 +107,7 @@ type Worker struct {
 	state         WorkerState
 	transport     Transport
 	stats         *stats.Stats
+	statsMutex    sync.Mutex
 	spawnCh       chan map[string]int64
 	ackCh         chan struct{}
 	heartbeatCh   chan struct{}
@@ -106,11 +115,18 @@ type Worker struct {
 
 	host          atomic.Value
 	parsedOptions atomic.Pointer[ParsedOptions]
+	stopTimeout   atomic.Int64
 
-	messageHandlers  map[string][]MessageHandler
-	connectHandlers  handlers
-	quittingHandlers handlers
-	quitHandlers     handlers
+	// resetStatsCh signals the stats process goroutine to clear w.stats.
+	// Used instead of touching w.stats directly, since it's only ever
+	// accessed from that single goroutine.
+	resetStatsCh chan struct{}
+
+	messageHandlers          map[string][]MessageHandler
+	connectHandlers          handlers
+	quittingHandlers         handlers
+	quitHandlers             handlers
+	spawningCompleteHandlers []func(userCount int64)
 
 	// cancel is the context cancel function of the join process.
 	cancel atomic.Value
@@ -134,6 +150,7 @@ func NewWorker(transport Transport, options ...WorkerOption) (*Worker, error) {
 		metricsMonitorInterval: defaultMetricsMonitorInterval,
 		masterHeartbeatTimeout: defaultMasterHeartbeatTimeout,
 		statsReportInterval:    defaultStatsReportInterval,
+		logReportInterval:      defaultLogReportInterval,
 		catchExceptions:        true,
 
 		loadGenerator: NewLoadGenerator(),
@@ -144,6 +161,7 @@ func NewWorker(transport Transport, options ...WorkerOption) (*Worker, error) {
 		spawnCh:       make(chan map[string]int64),
 		ackCh:         make(chan struct{}, 1),
 		heartbeatCh:   make(chan struct{}),
+		resetStatsCh:  make(chan struct{}, 1),
 		procInfo:      procInfo,
 
 		messageHandlers: map[string][]MessageHandler{},
@@ -198,6 +216,7 @@ func (w *Worker) Join() error {
 	w.startHeartbeatCheckProcess(ctx, &procWg, w.masterHeartbeatTimeout)
 	w.startMetricsMonitorProcess(ctx, &procWg, w.metricsMonitorInterval)
 	w.startStatsProcess(ctx, &procWg, w.statsReportInterval)
+	w.startLogsProcess(ctx, &procWg, w.logReportInterval)
 	w.startSpawnProcess(ctx, &procWg)
 
 	procWg.Wait()
@@ -261,6 +280,12 @@ func (w *Worker) OnQuit(f func()) {
 	w.quitHandlers.Add(f)
 }
 
+// OnSpawningComplete registers function to be called when the master reports
+// that spawning is complete across the whole cluster.
+func (w *Worker) OnSpawningComplete(f func(userCount int64)) {
+	w.spawningCompleteHandlers = append(w.spawningCompleteHandlers, f)
+}
+
 // OnTestStart registers function to be called when the test starts.
 func (w *Worker) OnTestStart(f func(ctx context.Context) error) {
 	w.loadGenerator.OnTestStart(f)
@@ -293,6 +318,12 @@ func (w *Worker) Host() string {
 		}
 	}
 	return ""
+}
+
+// StopTimeout returns the grace period given to a user to finish its current
+// task before its context is actually canceled when asked to stop.
+func (w *Worker) StopTimeout() time.Duration {
+	return time.Duration(w.stopTimeout.Load())
 }
 
 func (w *Worker) Tags() (tags, excludeTags *[]string) {
@@ -444,8 +475,27 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 
 				w.host.Store(payload.Host)
 				w.parsedOptions.Store(&payload.ParsedOptions)
+				w.stopTimeout.Store(int64(payload.StopTimeout * float64(time.Second)))
 
 				w.spawnCh <- payload.UserClassesCount
+
+			case messageSpawningComplete:
+				// master からのクラスタ全体のspawning完了通知
+				var payload spawningCompletePayload
+				if err := msg.DecodePayload(&payload); err != nil {
+					return
+				}
+
+				if p := w.parsedOptions.Load(); p != nil && p.ResetStats {
+					select {
+					case w.resetStatsCh <- struct{}{}:
+					default:
+					}
+				}
+
+				for _, f := range w.spawningCompleteHandlers {
+					f(payload.UserCount)
+				}
 
 			case messageStop:
 				w.loadGenerator.Stop()
@@ -628,7 +678,14 @@ func (w *Worker) startStatsProcess(ctx context.Context, wg *sync.WaitGroup, inte
 		for {
 			select {
 			case st := <-ch:
+				w.statsMutex.Lock()
 				w.stats.Merge(st)
+				w.statsMutex.Unlock()
+
+			case <-w.resetStatsCh:
+				w.statsMutex.Lock()
+				w.stats.Clear()
+				w.statsMutex.Unlock()
 
 			case <-ticker.C:
 				_ = w.sendStats()
@@ -640,8 +697,51 @@ func (w *Worker) startStatsProcess(ctx context.Context, wg *sync.WaitGroup, inte
 	}()
 }
 
+func (w *Worker) startLogsProcess(ctx context.Context, wg *sync.WaitGroup, interval time.Duration) {
+	if interval <= 0 || w.logCapture == nil {
+		return
+	}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		// リングバッファの長さは上限に達すると変化しなくなるため、送信済みかどうかの判定には累計本数 (Total) を使う
+		var lastTotal int64
+
+	loop:
+		for {
+			select {
+			case <-ticker.C:
+				if total := w.logCapture.Total(); total > lastTotal {
+					if err := w.sendLogs(w.logCapture.Lines()); err == nil {
+						lastTotal = total
+					}
+				}
+
+			case <-ctx.Done():
+				break loop
+			}
+		}
+	}()
+}
+
+func (w *Worker) sendLogs(lines []string) error {
+	return w.SendMessage(messageLogs, logsPayload{
+		WorkerID: w.clientID,
+		Logs:     lines,
+	})
+}
+
 func (w *Worker) sendStats() error {
-	payload := convertStatisticsPayload(w.stats.Flush())
+	w.statsMutex.Lock()
+	entries, total, errs := w.stats.Flush()
+	w.statsMutex.Unlock()
+
+	payload := convertStatisticsPayload(entries, total, errs)
 	payload.UserClassesCount = w.loadGenerator.Users()
 	for _, count := range payload.UserClassesCount {
 		payload.UserCount += count
@@ -721,12 +821,14 @@ func convertStatisticsEntry(name, method string, entry *stats.Entry) *statsPaylo
 	}
 }
 
-func convertStatisticsError(key stats.ErrorKey, occurrence int64) *statsPayloadError {
+func convertStatisticsError(key stats.ErrorKey, occurrence stats.ErrorOccurrence) *statsPayloadError {
 	return &statsPayloadError{
 		Name:        key.Name,
 		Method:      key.Method,
 		Error:       key.Error,
-		Occurrences: occurrence,
+		Occurrences: occurrence.Count,
+		FirstSeen:   float64(occurrence.FirstSeen) / 1e9, // [s]
+		LastSeen:    float64(occurrence.LastSeen) / 1e9,  // [s]
 	}
 }
 

@@ -82,7 +82,7 @@ func (b *BaseUserImpl) Runner() Runner {
 
 // Wait waits for the time returned by WaitTime.
 func (b *BaseUserImpl) Wait(ctx context.Context) error {
-	return b.waiter.Wait(ctx)
+	return b.waiter.Wait(WithoutGracefulStop(ctx))
 }
 
 // OnStart is called when the user starts.
@@ -100,22 +100,26 @@ func (b *BaseUserImpl) Report(requestType, name string, responseTime time.Durati
 	b.reporter.Report(requestType, name, responseTime, contentLength, err)
 }
 
-func processUser(ctx context.Context, user User) error {
-	if err := user.OnStart(ctx); err != nil {
+func processUser(ctx context.Context, user User, stopTimeout time.Duration) error {
+	gracefulCtx, stop := WithGracefulStop(ctx, stopTimeout)
+	defer stop()
+
+	if err := user.OnStart(gracefulCtx); err != nil {
 		if !errors.Is(err, context.Canceled) && !errors.Is(err, StopUser) {
 			// unexpected error
 			return err
 		}
 		// locust/user stopped
-		return user.OnStop(context.WithoutCancel(ctx))
+		return user.OnStop(context.WithoutCancel(gracefulCtx))
 	}
 
 	for {
+		// 元の ctx がキャンセルされていたら、 user.Process の前に終了
 		if ctx.Err() != nil {
 			// user.Process がコンテキストのキャンセルを無視した場合 goroutine が停止しなくなるのでここでもチェックする
 			break
 		}
-		if err := user.Process(ctx); err != nil {
+		if err := user.Process(gracefulCtx); err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, StopUser) {
 				// locust/user stopped
 				break
@@ -133,5 +137,5 @@ func processUser(ctx context.Context, user User) error {
 		}
 	}
 
-	return user.OnStop(context.WithoutCancel(ctx))
+	return user.OnStop(context.WithoutCancel(gracefulCtx))
 }

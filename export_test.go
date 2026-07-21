@@ -18,6 +18,7 @@ package launce
 
 import (
 	"context"
+	"time"
 )
 
 type SendMessage = message
@@ -30,8 +31,8 @@ func DecodeMessage(data []byte) (Message, error) {
 	return decodeMessage(data)
 }
 
-func ProcessUser(ctx context.Context, user User) error {
-	return processUser(ctx, user)
+func ProcessUser(ctx context.Context, user User, stopTimeout time.Duration) error {
+	return processUser(ctx, user, stopTimeout)
 }
 
 const (
@@ -47,6 +48,7 @@ const (
 	MessageSpawningComplete = messageSpawningComplete
 	MessageStats            = messageStats
 	MessageException        = messageException
+	MessageLogs             = messageLogs
 )
 
 type (
@@ -58,4 +60,5 @@ type (
 	StatsPayload            = statsPayload
 	ExceptionPayload        = exceptionPayload
 	SpawningCompletePayload = spawningCompletePayload
+	LogsPayload             = logsPayload
 )

@@ -21,6 +21,7 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/qitoi/launce"
 	"github.com/qitoi/launce/taskset"
@@ -962,5 +963,40 @@ func TestTaskSet_Cancel(t *testing.T) {
 				t.Fatalf("unexpected result. got:%v, want:%v", result, testcase.Expected)
 			}
 		})
+	}
+}
+
+// TestTaskSet_SoftStop は、graceful stop のソフト信号 (ctx はまだキャンセルされて
+// いないが停止要求は来ている状態) が来た場合、実行中のタスクは最後まで完了させ、
+// 次のタスクは開始せずに終了することを確認する。
+func TestTaskSet_SoftStop(t *testing.T) {
+	soft, softCancel := context.WithCancel(context.Background())
+	ctx, cleanup := launce.WithGracefulStop(soft, time.Second)
+	defer cleanup()
+
+	u := &testUser{
+		Cancel: softCancel,
+	}
+
+	ts := newTaskSet(nil, nil,
+		taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+			u.(*testUser).Add(1)
+			u.(*testUser).Cancel() // ソフト信号のみ立てる。hard ctx はまだキャンセルしない
+			return nil             // 今のタスクは中断されず正常終了する
+		}),
+		taskset.TaskFunc(func(ctx context.Context, u launce.User, s taskset.Scheduler) error {
+			u.(*testUser).Add(2)
+			return nil
+		}),
+	)
+
+	err := taskset.Run(ctx, ts, u)
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("unexpected error. got:%v want:%v", err, context.Canceled)
+	}
+	want := []int{1}
+	if slices.Compare(u.Result, want) != 0 {
+		t.Fatalf("unexpected result (task #2 should not run). got:%v want:%v", u.Result, want)
 	}
 }

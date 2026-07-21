@@ -80,6 +80,16 @@ func (b *BaseImpl) Run(ctx context.Context, user launce.User, s Scheduler) error
 	}
 
 	for {
+		if err := ctx.Err(); err != nil {
+			_ = b.taskset.OnStop(context.WithoutCancel(ctx), user)
+			return err
+		}
+		if launce.Stopping(ctx) {
+			// graceful stop の猶予期間中。今のタスクは既に終わっているので、次のタスクは開始せずここで終了する
+			_ = b.taskset.OnStop(context.WithoutCancel(ctx), user)
+			return context.Canceled
+		}
+
 		if tq.Empty() {
 			tq.Schedule(b.taskset.Next(), false)
 		}
@@ -160,7 +170,7 @@ func (b *BaseImpl) OnStop(ctx context.Context, u launce.User) error {
 func wait(ctx context.Context, user launce.User, waiter *internal.Waiter) error {
 	// TaskSet に WaitTimeFunc が設定されていればそれを使用して Wait
 	if waiter != nil {
-		return waiter.Wait(ctx)
+		return waiter.Wait(launce.WithoutGracefulStop(ctx))
 	}
 	// 指定されていなければ User の Wait を使用
 	if user != nil {

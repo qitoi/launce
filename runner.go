@@ -16,6 +16,10 @@
 
 package launce
 
+import (
+	"time"
+)
+
 // MessageHandler defines a function to handle custom messages from the master.
 type MessageHandler func(msg Message)
 
@@ -23,6 +27,7 @@ type MessageHandler func(msg Message)
 type Runner interface {
 	Host() string
 	Tags() (tags, excludeTags *[]string)
+	StopTimeout() time.Duration
 
 	Options(v interface{}) error
 

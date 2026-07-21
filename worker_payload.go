@@ -37,6 +37,7 @@ const (
 	messageSpawningComplete = "spawning_complete"
 	messageStats            = "stats"
 	messageException        = "exception"
+	messageLogs             = "logs"
 )
 
 type ackPayload struct {
@@ -75,10 +76,12 @@ type statsPayloadEntry struct {
 }
 
 type statsPayloadError struct {
-	Name        string `msgpack:"name"`
-	Method      string `msgpack:"method"`
-	Error       string `msgpack:"error"`
-	Occurrences int64  `msgpack:"occurrences"`
+	Name        string  `msgpack:"name"`
+	Method      string  `msgpack:"method"`
+	Error       string  `msgpack:"error"`
+	Occurrences int64   `msgpack:"occurrences"`
+	FirstSeen   float64 `msgpack:"first_seen"`
+	LastSeen    float64 `msgpack:"last_seen"`
 }
 
 type statsPayload struct {
@@ -97,4 +100,9 @@ type exceptionPayload struct {
 type spawningCompletePayload struct {
 	UserClassesCount map[string]int64 `msgpack:"user_classes_count"`
 	UserCount        int64            `msgpack:"user_count"`
+}
+
+type logsPayload struct {
+	WorkerID string   `msgpack:"worker_id"`
+	Logs     []string `msgpack:"logs"`
 }
