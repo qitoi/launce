@@ -65,9 +65,9 @@ type LoadGenerator struct {
 
 	started atomic.Bool
 
-	statsAggregator *stats.Aggregator
-	aggMutex        sync.Mutex
-	aggUserCounter  int
+	aggMutex               sync.Mutex
+	aggUserCounter         int
+	currentStatsAggregator *stats.Aggregator
 }
 
 // NewLoadGenerator returns a new LoadGenerator.
@@ -87,14 +87,17 @@ func (l *LoadGenerator) RegisterUser(r Runner, name string, f func() User) {
 	spawnFunc := func(ctx context.Context) {
 		l.aggMutex.Lock()
 		if l.aggUserCounter == 0 {
-			if l.statsAggregator != nil {
-				l.statsAggregator.Release()
+			// StatsAggregationUsers 人分埋まった aggregator にはこれ以上ユーザーを割り当てないので、参照を解放する
+			if l.currentStatsAggregator != nil {
+				l.currentStatsAggregator.Release()
 			}
-			l.statsAggregator = stats.NewCollector(l.statsCh, l.StatsNotifyInterval)
-			l.statsAggregator.Retain()
+			// aggregator を作成し、次の StatsAggregationUsers はこれに割り当てる
+			l.currentStatsAggregator = stats.NewCollector(l.statsCh, l.StatsNotifyInterval)
+			// 割り当て中の aggregator のユーザー数が 0 になっても解放されないように、ユーザーに紐付かない参照を確保しておく
+			l.currentStatsAggregator.Retain()
 		}
 		l.aggUserCounter = (l.aggUserCounter + 1) % l.StatsAggregationUsers
-		rep := l.statsAggregator
+		rep := l.currentStatsAggregator
 		rep.Retain()
 		l.aggMutex.Unlock()
 
@@ -147,10 +150,11 @@ func (l *LoadGenerator) Start() error {
 
 	l.aggMutex.Lock()
 	l.aggUserCounter = 0
-	if l.statsAggregator != nil {
-		l.statsAggregator.Release()
+	if l.currentStatsAggregator != nil {
+		// 負荷テスト開始時に前回の aggregator が残っていたら解放する
+		l.currentStatsAggregator.Release()
+		l.currentStatsAggregator = nil
 	}
-	l.statsAggregator = nil
 	l.aggMutex.Unlock()
 
 	for _, f := range l.testStartHandlers {
@@ -192,6 +196,15 @@ func (l *LoadGenerator) Stop() {
 		}(s)
 	}
 	wg.Wait()
+
+	l.aggMutex.Lock()
+	l.aggUserCounter = 0
+	if l.currentStatsAggregator != nil {
+		// 負荷テスト終了時に aggregator を解放する
+		l.currentStatsAggregator.Release()
+		l.currentStatsAggregator = nil
+	}
+	l.aggMutex.Unlock()
 
 	for _, f := range l.testStopHandlers {
 		f(ctx)
