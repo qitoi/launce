@@ -22,6 +22,7 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/qitoi/launce"
 )
@@ -256,6 +257,51 @@ func TestLoadGenerator_Spawn_MultiUser(t *testing.T) {
 	}
 	if n := uc2.Stopped(); n != 5 {
 		t.Fatalf("unexpected stopped user. got:%v want:%v", n, 5)
+	}
+}
+
+// TestLoadGenerator_Stop_ReleasesStatsAggregator は、Stop 後に
+// statsAggregator のアンカー分の参照が解放され、内部の goroutine が
+// 終了することを確認する。100人未満で Stop した場合、解放しないと
+// アンカー分の参照が残り続け、goroutine が StatsNotifyInterval ごとに
+// 空の Stats を送り続けてしまう。
+func TestLoadGenerator_Stop_ReleasesStatsAggregator(t *testing.T) {
+	r := launce.NewLoadGenerator()
+	r.StatsNotifyInterval = 5 * time.Millisecond
+
+	uc := newUserController()
+	r.RegisterUser(nil, "TestUser", uc.NewUser)
+
+	if err := r.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Spawn("TestUser", 3); err != nil {
+		t.Fatal(err)
+	}
+	uc.WaitStart(3)
+
+	r.Stop()
+	uc.WaitStop(3)
+
+	drain := func(d time.Duration) int {
+		count := 0
+		timeout := time.After(d)
+		for {
+			select {
+			case <-r.Stats():
+				count++
+			case <-timeout:
+				return count
+			}
+		}
+	}
+
+	// Stop 直後の最終フラッシュ分を読み捨てる
+	drain(50 * time.Millisecond)
+
+	// それでも goroutine が生き残っていれば、この間にも Stats が届き続けるはず
+	if n := drain(50 * time.Millisecond); n != 0 {
+		t.Fatalf("stats aggregator goroutine appears to still be running after Stop: got %d more messages", n)
 	}
 }
 
