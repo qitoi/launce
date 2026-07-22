@@ -439,6 +439,61 @@ func waitForState(w *launce.Worker, state launce.WorkerState, timeout time.Durat
 	}
 }
 
+// TestWorker_MalformedMessage_DoesNotKillMessageLoop は、デコードできない
+// payload を含むメッセージを受信しても、メッセージ受信の goroutine が停止せず、
+// エラーをマスターに報告した上で以降のメッセージを処理し続けることを確認する。
+func TestWorker_MalformedMessage_DoesNotKillMessageLoop(t *testing.T) {
+	var wg sync.WaitGroup
+
+	w, master := setupWorker(t)
+	masterCh, waitForReady := startMasterReceiver(&wg, master,
+		launce.MessageClientReady, launce.MessageException, launce.MessageSpawning, launce.MessageSpawningComplete)
+
+	uc := newUserController()
+	w.RegisterUser("test-user", uc.NewUser)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_ = w.Join()
+	}()
+
+	waitForReady()
+	if msg := <-masterCh; msg.Type != launce.MessageClientReady {
+		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageClientReady)
+	}
+
+	// spawn の payload としてデコード不能なデータを送る
+	_ = master.Send(launce.SendMessage{
+		Type:   launce.MessageSpawn,
+		Data:   "malformed-payload",
+		NodeID: w.ClientID(),
+	})
+
+	if msg := <-masterCh; msg.Type != launce.MessageException {
+		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageException)
+	}
+
+	// メッセージ受信の goroutine が生きていて、以降の正常な spawn を処理できることを確認する
+	_ = master.SendSpawn(map[string]int64{"test-user": 2}, w.ClientID())
+
+	if msg := <-masterCh; msg.Type != launce.MessageSpawning {
+		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageSpawning)
+	}
+	if msg := <-masterCh; msg.Type != launce.MessageSpawningComplete {
+		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageSpawningComplete)
+	}
+
+	uc.WaitStart(2)
+	if n := uc.Started(); n != 2 {
+		t.Fatalf("unexpected started user. got:%v want:%v", n, 2)
+	}
+
+	w.Quit()
+
+	wg.Wait()
+}
+
 func TestWorker_QuitMessage(t *testing.T) {
 	var wg sync.WaitGroup
 
