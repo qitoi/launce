@@ -341,6 +341,104 @@ func TestWorker_SpawnMessage(t *testing.T) {
 	wg.Wait()
 }
 
+// TestWorker_StopMessage_RemainsResponsive は、stop の処理(OnStop)に時間が掛かっている間も、
+// メッセージ受信の goroutine がブロックされず、他のメッセージを処理できることを確認する。
+func TestWorker_StopMessage_RemainsResponsive(t *testing.T) {
+	var wg sync.WaitGroup
+
+	unblockStop := make(chan struct{})
+	u := &user{
+		ProcessFunc: func(ctx context.Context) error {
+			<-ctx.Done()
+			return ctx.Err()
+		},
+		OnStopFunc: func(ctx context.Context) error {
+			<-unblockStop
+			return nil
+		},
+	}
+
+	w, master := setupWorker(t)
+	masterCh, waitForReady := startMasterReceiver(&wg, master,
+		launce.MessageClientReady, launce.MessageSpawning, launce.MessageSpawningComplete, launce.MessageClientStopped)
+
+	w.RegisterUser("test-user", func() launce.User { return u })
+
+	customCh := make(chan struct{}, 1)
+	w.RegisterMessage("custom-message", func(msg launce.Message) {
+		customCh <- struct{}{}
+	})
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_ = w.Join()
+	}()
+
+	waitForReady()
+	if msg := <-masterCh; msg.Type != launce.MessageClientReady {
+		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageClientReady)
+	}
+
+	_ = master.SendSpawn(map[string]int64{"test-user": 1}, w.ClientID())
+	if msg := <-masterCh; msg.Type != launce.MessageSpawning {
+		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageSpawning)
+	}
+	if msg := <-masterCh; msg.Type != launce.MessageSpawningComplete {
+		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageSpawningComplete)
+	}
+
+	// stop を送る。OnStop は unblockStop から受信するまでブロックし続ける
+	_ = master.Send(launce.SendMessage{
+		Type:   launce.MessageStop,
+		NodeID: w.ClientID(),
+	})
+
+	// stop の処理中であることを確認する (WorkerStateCleanup に遷移している)
+	if !waitForState(w, launce.WorkerStateCleanup, time.Second) {
+		t.Fatalf("worker did not transition to WorkerStateCleanup while stop was in progress")
+	}
+
+	// stop の処理がブロックされている間でも、他のメッセージを受信・処理できることを確認する
+	_ = master.Send(launce.SendMessage{
+		Type:   "custom-message",
+		NodeID: w.ClientID(),
+	})
+
+	select {
+	case <-customCh:
+	case <-time.After(time.Second):
+		t.Fatal("worker did not process another message while stop was in progress")
+	}
+
+	close(unblockStop)
+
+	if msg := <-masterCh; msg.Type != launce.MessageClientStopped {
+		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageClientStopped)
+	}
+	if msg := <-masterCh; msg.Type != launce.MessageClientReady {
+		t.Fatalf("unexpected master received message. got:%v want:%v", msg.Type, launce.MessageClientReady)
+	}
+
+	w.Quit()
+
+	wg.Wait()
+}
+
+func waitForState(w *launce.Worker, state launce.WorkerState, timeout time.Duration) bool {
+	deadline := time.After(timeout)
+	for {
+		if w.State() == state {
+			return true
+		}
+		select {
+		case <-deadline:
+			return false
+		case <-time.After(time.Millisecond):
+		}
+	}
+}
+
 func TestWorker_QuitMessage(t *testing.T) {
 	var wg sync.WaitGroup
 
