@@ -451,7 +451,8 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 			case messageAck:
 				var payload ackPayload
 				if err := msg.DecodePayload(&payload); err != nil {
-					return
+					w.ReportException(fmt.Errorf("failed to decode ack payload: %w", err))
+					continue
 				}
 				atomic.StoreInt64(&w.index, payload.Index)
 
@@ -463,7 +464,8 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 			case messageSpawn:
 				var payload spawnPayload
 				if err := msg.DecodePayload(&payload); err != nil {
-					return
+					w.ReportException(fmt.Errorf("failed to decode spawn payload: %w", err))
+					continue
 				}
 
 				if payload.Timestamp <= lastReceivedSpawnTimestamp {
@@ -481,7 +483,8 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 				// master からのクラスタ全体のspawning完了通知
 				var payload spawningCompletePayload
 				if err := msg.DecodePayload(&payload); err != nil {
-					return
+					w.ReportException(fmt.Errorf("failed to decode spawning_complete payload: %w", err))
+					continue
 				}
 
 				if p := w.parsedOptions.Load(); p != nil && p.ResetStats {
