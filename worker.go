@@ -109,18 +109,15 @@ type Worker struct {
 	stats         *stats.Stats
 	statsMutex    sync.Mutex
 	spawnCh       chan map[string]int64
+	stopCh        chan struct{}
 	ackCh         chan struct{}
 	heartbeatCh   chan struct{}
+	resetStatsCh  chan struct{}
 	procInfo      *processInfo
 
 	host          atomic.Value
 	parsedOptions atomic.Pointer[ParsedOptions]
 	stopTimeout   atomic.Int64
-
-	// resetStatsCh signals the stats process goroutine to clear w.stats.
-	// Used instead of touching w.stats directly, since it's only ever
-	// accessed from that single goroutine.
-	resetStatsCh chan struct{}
 
 	messageHandlers          map[string][]MessageHandler
 	connectHandlers          handlers
@@ -159,6 +156,7 @@ func NewWorker(transport Transport, options ...WorkerOption) (*Worker, error) {
 		transport:     transport,
 		stats:         stats.New(),
 		spawnCh:       make(chan map[string]int64),
+		stopCh:        make(chan struct{}, 1),
 		ackCh:         make(chan struct{}, 1),
 		heartbeatCh:   make(chan struct{}),
 		resetStatsCh:  make(chan struct{}, 1),
@@ -217,7 +215,7 @@ func (w *Worker) Join() error {
 	w.startMetricsMonitorProcess(ctx, &procWg, w.metricsMonitorInterval)
 	w.startStatsProcess(ctx, &procWg, w.statsReportInterval)
 	w.startLogsProcess(ctx, &procWg, w.logReportInterval)
-	w.startSpawnProcess(ctx, &procWg)
+	w.startLoadTestCycleProcess(ctx, &procWg)
 
 	procWg.Wait()
 
@@ -498,12 +496,10 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 				}
 
 			case messageStop:
-				w.loadGenerator.Stop()
-				w.host.Store("")
-				w.parsedOptions.Store(nil)
-				_ = w.SendMessage(messageClientStopped, nil)
-				atomic.StoreInt64(&w.state, WorkerStateInit)
-				_ = w.SendMessage(messageClientReady, w.version)
+				select {
+				case w.stopCh <- struct{}{}:
+				default:
+				}
 
 			case messageReconnect:
 				_ = w.close()
@@ -531,7 +527,7 @@ func (w *Worker) startMessageProcess(wg *sync.WaitGroup) {
 	}()
 }
 
-func (w *Worker) startSpawnProcess(ctx context.Context, wg *sync.WaitGroup) {
+func (w *Worker) startLoadTestCycleProcess(ctx context.Context, wg *sync.WaitGroup) {
 	wg.Add(2)
 
 	relayCh := make(chan map[string]int64)
@@ -593,6 +589,15 @@ func (w *Worker) startSpawnProcess(ctx context.Context, wg *sync.WaitGroup) {
 				_ = w.SendMessage(messageSpawningComplete, payload)
 
 				atomic.StoreInt64(&w.state, WorkerStateRunning)
+
+			case <-w.stopCh:
+				atomic.StoreInt64(&w.state, WorkerStateCleanup)
+				w.loadGenerator.Stop()
+				w.host.Store("")
+				w.parsedOptions.Store(nil)
+				_ = w.SendMessage(messageClientStopped, nil)
+				atomic.StoreInt64(&w.state, WorkerStateInit)
+				_ = w.SendMessage(messageClientReady, w.version)
 
 			case <-ctx.Done():
 				break loop
